@@ -7,6 +7,8 @@
 <style>
   html, body { margin:0; padding:0; overflow:hidden; background:#000; height:100%; width:100%; touch-action:none; cursor:default; }
   #c { display:block; width:100vw; height:100vh; }
+  
+  /* HUD */
   #hud {
     position:fixed; top:0; left:0; width:100%; height:100%;
     pointer-events:none; font-family:'Courier New', monospace; color:#e8dfa8;
@@ -50,15 +52,57 @@
   #speedKmh { position:absolute; bottom:52px; left:14px; font-size:9px; opacity:0.75; letter-spacing:1px; }
   #healthbar-wrap { position:absolute; bottom:44px; right:14px; width:120px; height:6px; background:rgba(255,255,255,0.15); border:1px solid rgba(200,80,80,0.5);}
   #healthbar { height:100%; width:100%; background:#c94a4a; }
-  #startScreen, #gameOverScreen, #powerupScreen {
+  #botCount {
+    position:absolute; top:calc(14vh + 40px); right:14px; 
+    font-size:12px; opacity:0.6;
+  }
+  #lockHint {
+    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
+    color:#e8dfa8; font-family:'Courier New',monospace; font-size:12px;
+    opacity:0.4; pointer-events:none; z-index:5;
+    text-shadow: 0 0 6px rgba(0,0,0,0.9);
+    transition: opacity 0.5s;
+  }
+
+  /* Screens */
+  #startScreen, #gameOverScreen, #powerupScreen, #usernamePrompt, #comicScreen {
     position:fixed; inset:0; background:rgba(5,5,3,0.92); color:#e8dfa8;
     display:flex; flex-direction:column; align-items:center; justify-content:center;
     font-family:'Courier New', monospace; text-align:center; padding:20px; z-index:10;
     pointer-events:auto;
   }
-  #gameOverScreen, #powerupScreen { display:none; }
+  #gameOverScreen, #powerupScreen, #usernamePrompt, #comicScreen { display:none; }
   #powerupScreen { background:rgba(8,8,5,0.45); }
+  
+  #comicScreen {
+    padding:0; background:#000; overflow:hidden;
+    cursor:pointer;
+  }
+  #comicImage {
+    width:100%; height:100%; object-fit:cover;
+    opacity:0; transition:opacity 1.5s ease;
+    transform: translateX(0%);
+  }
+  #comicImage.visible { opacity:1; }
+  #comicImage.scrolling { 
+    animation: comicScroll 8s linear forwards;
+  }
+  @keyframes comicScroll {
+    0% { transform: translateX(0%); }
+    100% { transform: translateX(-20%); }
+  }
+  #comicSkip {
+    position:absolute; bottom:40px; left:50%; transform:translateX(-50%);
+    padding:12px 40px; background:rgba(0,0,0,0.7); border:2px solid #e8dfa8;
+    color:#e8dfa8; font-family:'Courier New',monospace; font-size:16px;
+    cursor:pointer; opacity:0; transition:opacity 0.5s;
+    pointer-events:none; z-index:11;
+  }
+  #comicSkip.visible { opacity:1; pointer-events:auto; }
+  #comicSkip:hover { background:#e8dfa8; color:#111; }
+
   h1 { font-size:26px; letter-spacing:3px; margin-bottom:6px; text-transform:uppercase;}
+  h1 img { max-width:80%; max-height:200px; object-fit:contain; }
   p.sub { opacity:0.65; font-size:13px; max-width:320px; line-height:1.6; margin: 6px 0 22px; }
   button {
     font-family:'Courier New', monospace; background:none; border:1px solid #e8dfa8; color:#e8dfa8;
@@ -67,6 +111,7 @@
   button:active { background:#e8dfa8; color:#111; }
   .stat { font-size:14px; margin:4px 0; opacity:0.85; }
   .bigstat { font-size:34px; margin: 4px 0 14px; }
+
   #choiceBar-wrap { position:relative; width:100%; max-width:340px; height:6px; background:rgba(255,255,255,0.15); margin:4px auto 14px; }
   #choiceBarFill { position:absolute; top:0; height:100%; background:#e8dfa8; }
   #upgradeOptions { display:flex; flex-direction:column; gap:12px; width:100%; max-width:340px; }
@@ -82,12 +127,14 @@
     25% { transform: translateX(-6px); }
     75% { transform: translateX(6px); }
   }
+
   #toast {
     position:fixed; left:50%; top:20%; transform:translateX(-50%);
     background:rgba(10,10,8,0.85); border:1px solid #e8dfa8; color:#e8dfa8;
     padding:10px 18px; font-family:'Courier New',monospace; letter-spacing:1px;
     display:none; opacity:0; transition:opacity 0.3s; z-index:25; pointer-events:none;
   }
+
   #jumpscare {
     position:fixed; inset:0; z-index:20; display:none;
     background-size:cover; background-position:center;
@@ -106,34 +153,37 @@
     0%,100% { filter: contrast(1) saturate(1); }
     50% { filter: contrast(2.2) saturate(0.3) invert(0.08); }
   }
-  #lockHint {
-    position:fixed; bottom:80px; left:50%; transform:translateX(-50%);
-    color:#e8dfa8; font-family:'Courier New',monospace; font-size:12px;
-    opacity:0.4; pointer-events:none; z-index:5;
-    text-shadow: 0 0 6px rgba(0,0,0,0.9);
-    transition: opacity 0.5s;
-  }
-  #botCount {
-    position:absolute; top:calc(14vh + 40px); right:14px; 
-    font-size:12px; opacity:0.6;
-  }
-  #usernamePrompt {
-    position:fixed; inset:0; background:rgba(5,5,3,0.95); color:#e8dfa8;
-    display:none; flex-direction:column; align-items:center; justify-content:center;
-    font-family:'Courier New', monospace; text-align:center; padding:20px; z-index:30;
-    pointer-events:auto;
-  }
+
   #usernamePrompt input {
     background:rgba(255,255,255,0.1); border:1px solid #e8dfa8; color:#e8dfa8;
     padding:12px 20px; font-size:18px; font-family:'Courier New', monospace;
     margin:10px 0; width:200px; text-align:center;
   }
   #usernamePrompt input:focus { outline:2px solid #e8dfa8; }
-  #usernamePrompt button { margin-top:10px; }
+  .button-group { display:flex; gap:12px; margin-top:10px; flex-wrap:wrap; justify-content:center; }
+  .button-group button { min-width:100px; }
+
+  #highScoreDisplay {
+    max-height:200px; overflow-y:auto; width:100%; max-width:340px;
+    text-align:left; margin:10px 0; padding:10px;
+    background:rgba(0,0,0,0.3); border:1px solid rgba(232,223,168,0.2);
+  }
+  #highScoreDisplay::-webkit-scrollbar { width:4px; }
+  #highScoreDisplay::-webkit-scrollbar-track { background:rgba(0,0,0,0.3); }
+  #highScoreDisplay::-webkit-scrollbar-thumb { background:#e8dfa8; border-radius:2px; }
+  .score-entry { 
+    display:flex; justify-content:space-between; padding:2px 0; 
+    font-size:12px; border-bottom:1px solid rgba(232,223,168,0.05);
+  }
+  .score-entry .rank { opacity:0.5; width:20px; }
+  .score-entry .name { flex:1; padding-left:8px; }
+  .score-entry .value { opacity:0.8; }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<!-- HUD -->
 <div id="hud">
   <div id="vignette"></div>
   <div id="proximity"></div>
@@ -152,11 +202,19 @@
 </div>
 <div id="lockHint">Click to lock cursor • WASD + Space + Shift</div>
 
+<!-- Jumpscare -->
 <div id="jumpscare"></div>
 <div id="toast"></div>
 
+<!-- Comic Screen -->
+<div id="comicScreen">
+  <img id="comicImage" src="assets/comic-strip.jpg" alt="Comic" onerror="this.style.display='none'; document.getElementById('comicSkip').classList.add('visible');">
+  <button id="comicSkip">Skip</button>
+</div>
+
+<!-- Start Screen -->
 <div id="startScreen">
-  <h1>THE BACKROOMS</h1>
+  <h1><img src="assets/title-image.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.textContent='THE BACKROOMS';"></h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
   Slide through low wall-slits. Grab green pellets to heal, blue ones for upgrades.<br>
@@ -164,13 +222,18 @@
   <button id="startBtn">Begin</button>
 </div>
 
+<!-- Username Prompt -->
 <div id="usernamePrompt">
-  <h1>ENTER YOUR NAME</h1>
-  <p class="sub">This will be saved for the high score leaderboard</p>
+  <h1>NEW HIGH SCORE!</h1>
+  <p class="sub">Enter your name for the leaderboard</p>
   <input type="text" id="usernameInput" maxlength="20" placeholder="Your name">
-  <button id="usernameConfirm">Confirm</button>
+  <div class="button-group">
+    <button id="usernameConfirm">Submit</button>
+    <button id="usernameSkip">Skip</button>
+  </div>
 </div>
 
+<!-- Game Over Screen -->
 <div id="gameOverScreen">
   <h1 id="goTitle">CAUGHT</h1>
   <div class="stat">You survived</div>
@@ -178,9 +241,11 @@
   <div class="stat" id="finalDist">0m traveled</div>
   <div class="stat" id="finalKiller">Killed by: Unknown</div>
   <div class="stat" id="finalUpgrades">Upgrades collected: 0</div>
+  <div id="highScoreDisplay"></div>
   <button id="retryBtn" style="margin-top:18px;">Try Again</button>
 </div>
 
+<!-- Powerup Screen -->
 <div id="powerupScreen">
   <h1>UPGRADE</h1>
   <p class="sub" style="margin-bottom:0;">Pick one — or the middle one gets picked for you</p>
@@ -252,6 +317,10 @@ let slideFrictionCur = 0.5;
 let dmgResistMult  = 1.0;
 let healBonusCur   = 0;
 let timeScale      = 1;
+
+// Performance logging
+let perfCounter = 0;
+let lastPerfLog = 0;
 
 // ============================================================
 // THREE.JS SETUP
@@ -360,7 +429,8 @@ const ceilMat  = new THREE.MeshStandardMaterial({map:ceilTex, roughness:0.9, sid
 const pitWallMat = new THREE.MeshBasicMaterial({map:pitWallTex, side:THREE.DoubleSide});
 const pitFloorMat = new THREE.MeshBasicMaterial({map:pitFloorTex, side:THREE.DoubleSide});
 
-const pitWallGeo = new THREE.BoxGeometry(CELL * 0.92, PIT_DEPTH, 0.08);
+// Use PlaneGeometry for pit walls (no gaps!)
+const pitWallPlaneGeo = new THREE.PlaneGeometry(CELL * 0.92, PIT_DEPTH);
 const pitFloorGeo = new THREE.PlaneGeometry(CELL * 0.8, CELL * 0.8);
 
 const bigCeil = new THREE.Mesh(new THREE.PlaneGeometry(2000,2000), ceilMat);
@@ -415,6 +485,13 @@ function getCorridorLength(rx, rz, dir, seed) {
   return 1 + Math.floor(h * 4);
 }
 
+// Check if a cell is a pit
+function isPit(cx, cz) {
+  const key = cellKey(cx, cz);
+  const cell = cellCache.get(key);
+  return cell && cell.type === PIT;
+}
+
 function getCell(cx0,cz0){
   const key = cellKey(cx0,cz0);
   let cell = cellCache.get(key);
@@ -459,7 +536,7 @@ function getCell(cx0,cz0){
       type = OPEN;
     }
   } else if(inRoomX !== inRoomZ) {
-    // Corridor: 50% open, 50% obstacle (slits twice as likely as pits)
+    // Corridor: 50% open, 33% slit, 17% pit
     const isHorizontal = !inRoomX;
     const dirTag = isHorizontal ? 1 : 2;
     const corridorLength = getCorridorLength(rx, rz, dirTag, mazeSeed);
@@ -468,11 +545,11 @@ function getCell(cx0,cz0){
     if(offset >= 0 && offset < corridorLength) {
       const r = hash2(rx*7 + dirTag*3, rz*7 + dirTag*3, mazeSeed + dirTag*131);
       if(r < 0.50) {
-        type = OPEN;  // 50% open
+        type = OPEN;
       } else if(r < 0.83) {
-        type = WALL_SLIT;  // 33% slit (twice as likely as pit)
+        type = WALL_SLIT;
       } else {
-        type = PIT;  // 17% pit
+        type = PIT;
       }
     } else {
       type = OPEN;
@@ -493,12 +570,45 @@ function cellTypeAtWorld(x,z){ const [cx,cz]=worldToCell(x,z); return getCell(cx
 
 function isBlockedForBot(x,z){
   const t = cellTypeAtWorld(x,z);
-  return t === WALL || t === PIT || t === WALL_SLIT; // Bots can't go through slits either
+  return t === WALL || t === PIT || t === WALL_SLIT;
 }
 
 function refreshMazeMeshes(px,pz){
+  const startTime = performance.now();
   const [pcx,pcz] = worldToCell(px,pz);
   const needed = new Set();
+  const pitCache = new Map();
+  
+  // First pass: collect all pits and check adjacency
+  for(let dx=-VIEW_RADIUS; dx<=VIEW_RADIUS; dx++){
+    for(let dz=-VIEW_RADIUS; dz<=VIEW_RADIUS; dz++){
+      const cx=pcx+dx, cz=pcz+dz;
+      const cell = getCell(cx,cz);
+      if(cell.type === PIT) {
+        pitCache.set(cellKey(cx,cz), {cx, cz});
+      }
+    }
+  }
+  
+  // Check which pit walls to skip (adjacent pits)
+  const skipWall = new Set();
+  for(const [key, pos] of pitCache) {
+    const {cx, cz} = pos;
+    // Check 4 neighbors
+    const neighbors = [
+      [cx, cz-1, 'N'],
+      [cx, cz+1, 'S'],
+      [cx-1, cz, 'W'],
+      [cx+1, cz, 'E']
+    ];
+    for(const [nx, nz, dir] of neighbors) {
+      if(pitCache.has(cellKey(nx, nz))) {
+        skipWall.add(key + '_' + dir);
+      }
+    }
+  }
+
+  // Second pass: create meshes
   for(let dx=-VIEW_RADIUS; dx<=VIEW_RADIUS; dx++){
     for(let dz=-VIEW_RADIUS; dz<=VIEW_RADIUS; dz++){
       const cx=pcx+dx, cz=pcz+dz;
@@ -546,42 +656,65 @@ function refreshMazeMeshes(px,pz){
           scene.add(floor);
           meshPool.set(pitKey+'_floor', floor);
           
-          // 4 walls with correct offset
           const halfCell = CELL * 0.46;
+          const wallHeight = PIT_DEPTH;
           
-          const wallN = new THREE.Mesh(pitWallGeo, pitWallMat);
-          wallN.position.set(wx, -PIT_DEPTH/2, wz - halfCell);
-          scene.add(wallN);
-          meshPool.set(pitKey+'_wallN', wallN);
+          // 4 walls using PlaneGeometry (no gaps!)
+          // North wall
+          if(!skipWall.has(key + '_N')) {
+            const wallN = new THREE.Mesh(pitWallPlaneGeo, pitWallMat);
+            wallN.position.set(wx, -wallHeight/2, wz - halfCell);
+            wallN.rotation.y = 0;
+            scene.add(wallN);
+            meshPool.set(pitKey+'_wallN', wallN);
+          }
           
-          const wallS = new THREE.Mesh(pitWallGeo, pitWallMat);
-          wallS.position.set(wx, -PIT_DEPTH/2, wz + halfCell);
-          scene.add(wallS);
-          meshPool.set(pitKey+'_wallS', wallS);
+          // South wall
+          if(!skipWall.has(key + '_S')) {
+            const wallS = new THREE.Mesh(pitWallPlaneGeo, pitWallMat);
+            wallS.position.set(wx, -wallHeight/2, wz + halfCell);
+            wallS.rotation.y = Math.PI;
+            scene.add(wallS);
+            meshPool.set(pitKey+'_wallS', wallS);
+          }
           
-          const wallE = new THREE.Mesh(pitWallGeo, pitWallMat);
-          wallE.position.set(wx + halfCell, -PIT_DEPTH/2, wz);
-          wallE.rotation.y = Math.PI/2;
-          scene.add(wallE);
-          meshPool.set(pitKey+'_wallE', wallE);
+          // East wall
+          if(!skipWall.has(key + '_E')) {
+            const wallE = new THREE.Mesh(pitWallPlaneGeo, pitWallMat);
+            wallE.position.set(wx + halfCell, -wallHeight/2, wz);
+            wallE.rotation.y = Math.PI/2;
+            scene.add(wallE);
+            meshPool.set(pitKey+'_wallE', wallE);
+          }
           
-          const wallW = new THREE.Mesh(pitWallGeo, pitWallMat);
-          wallW.position.set(wx - halfCell, -PIT_DEPTH/2, wz);
-          wallW.rotation.y = Math.PI/2;
-          scene.add(wallW);
-          meshPool.set(pitKey+'_wallW', wallW);
+          // West wall
+          if(!skipWall.has(key + '_W')) {
+            const wallW = new THREE.Mesh(pitWallPlaneGeo, pitWallMat);
+            wallW.position.set(wx - halfCell, -wallHeight/2, wz);
+            wallW.rotation.y = -Math.PI/2;
+            scene.add(wallW);
+            meshPool.set(pitKey+'_wallW', wallW);
+          }
           
           meshPool.set(pitKey, {type:'pit'});
         }
       }
     }
   }
+  
+  // Cleanup
   for(const [key,mesh] of meshPool){
     if(!needed.has(key) && !key.includes('#pit')){
       scene.remove(mesh);
-      if(mesh.geometry!==sharedBoxGeo && mesh.geometry!==slitBoxGeo && mesh.geometry!==floorTileGeo && mesh.geometry!==pitWallGeo && mesh.geometry!==pitFloorGeo) mesh.geometry.dispose();
+      if(mesh.geometry!==sharedBoxGeo && mesh.geometry!==slitBoxGeo && mesh.geometry!==floorTileGeo && mesh.geometry!==pitWallPlaneGeo && mesh.geometry!==pitFloorGeo) mesh.geometry.dispose();
       meshPool.delete(key);
     }
+  }
+  
+  // Performance logging
+  const elapsed = performance.now() - startTime;
+  if (elapsed > 5) {
+    console.log(`[Perf] refreshMazeMeshes: ${elapsed.toFixed(2)}ms`);
   }
 }
 
@@ -903,23 +1036,42 @@ function setBotAudioSlow(isSlow){
 // HIGH SCORES
 // ============================================================
 let playerUsername = '';
+let highScoresCache = null;
 
 function getUsername() {
-  const saved = localStorage.getItem('torirooms_username');
-  if (saved) {
-    playerUsername = saved;
-    return saved;
-  }
+  try {
+    const saved = localStorage.getItem('torirooms_username');
+    if (saved) {
+      playerUsername = saved;
+      return saved;
+    }
+  } catch(e) {}
   return null;
 }
 
 function setUsername(name) {
-  playerUsername = name;
-  localStorage.setItem('torirooms_username', name);
+  try {
+    playerUsername = name;
+    localStorage.setItem('torirooms_username', name);
+  } catch(e) {}
+}
+
+function getHighScores() {
+  const url = HIGHSCORE_API + '?action=getScores';
+  return fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      highScoresCache = data.data;
+      return data.data;
+    })
+    .catch(err => {
+      console.error('Failed to get high scores:', err);
+      return { topTimes: [], topDistances: [] };
+    });
 }
 
 function submitHighScore(time, distance, killedBy) {
-  if (!playerUsername) return;
+  if (!playerUsername) return Promise.resolve();
   
   const data = {
     username: playerUsername,
@@ -932,7 +1084,7 @@ function submitHighScore(time, distance, killedBy) {
   
   const url = HIGHSCORE_API + '?action=updateScore&data=' + encodeURIComponent(JSON.stringify(data));
   
-  fetch(url)
+  return fetch(url)
     .then(r => r.json())
     .then(data => {
       console.log('High score submitted:', data);
@@ -942,15 +1094,108 @@ function submitHighScore(time, distance, killedBy) {
     });
 }
 
-function getHighScores() {
-  const url = HIGHSCORE_API + '?action=getScores';
-  return fetch(url)
-    .then(r => r.json())
-    .then(data => data.data)
-    .catch(err => {
-      console.error('Failed to get high scores:', err);
-      return { topTimes: [], topDistances: [] };
+function checkIfHighScore(time, distance) {
+  if (!highScoresCache) return true; // If we can't check, assume yes
+  const topTimes = highScoresCache.topTimes || [];
+  const topDistances = highScoresCache.topDistances || [];
+  
+  // Check if time beats the 10th place time
+  if (topTimes.length < 10) return true;
+  const minTime = topTimes[topTimes.length - 1]?.time || 0;
+  if (time > minTime) return true;
+  
+  // Check if distance beats the 10th place distance
+  if (topDistances.length < 10) return true;
+  const minDist = topDistances[topDistances.length - 1]?.distance || 0;
+  if (distance > minDist) return true;
+  
+  return false;
+}
+
+function renderHighScores(scores) {
+  const container = document.getElementById('highScoreDisplay');
+  if (!container) return;
+  
+  let html = '<div style="font-size:12px;opacity:0.6;margin-bottom:6px;">🏆 TOP 10 TIMES</div>';
+  const topTimes = scores.topTimes || [];
+  if (topTimes.length === 0) {
+    html += '<div style="font-size:11px;opacity:0.4;padding:4px 0;">No scores yet</div>';
+  } else {
+    topTimes.forEach((entry, i) => {
+      html += `<div class="score-entry">
+        <span class="rank">#${i+1}</span>
+        <span class="name">${entry.username}</span>
+        <span class="value">${entry.time.toFixed(1)}s</span>
+      </div>`;
     });
+  }
+  
+  html += '<div style="font-size:12px;opacity:0.6;margin:8px 0 6px;">📏 TOP 10 DISTANCES</div>';
+  const topDistances = scores.topDistances || [];
+  if (topDistances.length === 0) {
+    html += '<div style="font-size:11px;opacity:0.4;padding:4px 0;">No scores yet</div>';
+  } else {
+    topDistances.forEach((entry, i) => {
+      html += `<div class="score-entry">
+        <span class="rank">#${i+1}</span>
+        <span class="name">${entry.username}</span>
+        <span class="value">${entry.distance}m</span>
+      </div>`;
+    });
+  }
+  
+  container.innerHTML = html;
+}
+
+// ============================================================
+// COMIC SCREEN
+// ============================================================
+let comicShown = false;
+
+function showComic() {
+  const screen = document.getElementById('comicScreen');
+  const img = document.getElementById('comicImage');
+  const skipBtn = document.getElementById('comicSkip');
+  
+  screen.style.display = 'flex';
+  
+  // Reset state
+  img.className = '';
+  skipBtn.classList.remove('visible');
+  img.style.transform = 'translateX(0%)';
+  
+  // Fade in
+  requestAnimationFrame(() => {
+    img.classList.add('visible');
+  });
+  
+  // Start scrolling after 1.5s
+  setTimeout(() => {
+    img.classList.add('scrolling');
+  }, 1500);
+  
+  // Show skip button after 3s (when scrolling is mostly done)
+  setTimeout(() => {
+    skipBtn.classList.add('visible');
+  }, 3000);
+  
+  // Click anywhere shows skip button if not visible
+  const showSkip = () => {
+    skipBtn.classList.add('visible');
+  };
+  screen.addEventListener('click', showSkip);
+  
+  // Skip button
+  skipBtn.addEventListener('click', () => {
+    screen.style.display = 'none';
+    document.getElementById('startScreen').style.display = 'flex';
+    screen.removeEventListener('click', showSkip);
+  });
+  
+  // Also skip if image fails to load
+  img.addEventListener('error', () => {
+    skipBtn.classList.add('visible');
+  });
 }
 
 // ============================================================
@@ -972,6 +1217,8 @@ let healFlash = 0;
 let deathSeq = 0;
 let pointerLocked = false;
 let killedBy = 'Unknown';
+let lastCellX = 0, lastCellZ = 0;
+let mazeUpdateCounter = 0;
 
 function currentSpeed(){ return baseSpeedCur + speedBonus; }
 function spawnIntervalCur(){ return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_BASE - elapsed*0.06); }
@@ -980,7 +1227,10 @@ function hitDamageCur(){ return Math.min(HIT_DAMAGE*2.0, HIT_DAMAGE + elapsed*0.
 function expectedBotCountCur(){ return Math.floor(EXPECTED_BOT_COUNT_BASE + elapsed / 15 * EXPECTED_BOT_COUNT_GROWTH); }
 
 function resetGame(){
+  const startTime = performance.now();
   clearBots(); clearPickups();
+  
+  // Clean up meshes more efficiently
   const toRemove = [];
   for(const [key,mesh] of meshPool){
     if(key !== '') {
@@ -988,7 +1238,8 @@ function resetGame(){
       toRemove.push(key);
     }
   }
-  meshPool = new Map(); cellCache = new Map();
+  meshPool = new Map(); 
+  cellCache = new Map();
   mazeSeed = Math.floor(Math.random()*99999)+1;
   roomOffsetX = Math.floor(Math.random()*10);
   roomOffsetZ = Math.floor(Math.random()*10);
@@ -1003,6 +1254,8 @@ function resetGame(){
   botRespawnTimer = 0;
   upgradesCollected = 0;
   killedBy = 'Unknown';
+  lastCellX = 0; lastCellZ = 0;
+  mazeUpdateCounter = 0;
 
   baseSpeedCur=BASE_SPEED; gravityCur=GRAVITY; yawRateCur=YAW_RATE;
   jumpBoostCur=COMBO_BASE; slideBoostCur=COMBO_BASE; slideFrictionCur=0.5;
@@ -1020,6 +1273,11 @@ function resetGame(){
   document.getElementById('gameOverScreen').style.display = 'none';
   document.getElementById('powerupScreen').style.display = 'none';
   document.getElementById('toast').style.display = 'none';
+  
+  const elapsed = performance.now() - startTime;
+  if (elapsed > 10) {
+    console.log(`[Perf] resetGame: ${elapsed.toFixed(2)}ms`);
+  }
 }
 
 function registerAction(kind){
@@ -1053,7 +1311,6 @@ const TURN_DRAG_PX = 130;
 let keys = { w:false, a:false, s:false, d:false, space:false, shift:false };
 let isMobile = false;
 
-// Detect mobile
 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
   isMobile = true;
   document.getElementById('lockHint').style.display = 'none';
@@ -1122,11 +1379,18 @@ window.addEventListener('keyup', e=>{
 });
 
 // ============================================================
-// MINIMAP
+// MINIMAP - optimized
 // ============================================================
 const miniCanvas = document.getElementById('minimap');
 const miniCtx = miniCanvas.getContext('2d');
+let lastMinimapUpdate = 0;
+
 function drawMinimap(){
+  const now = performance.now();
+  // Only update minimap every 100ms
+  if (now - lastMinimapUpdate < 100) return;
+  lastMinimapUpdate = now;
+  
   const W = miniCanvas.width, H = miniCanvas.height;
   miniCtx.clearRect(0,0,W,H);
   miniCtx.fillStyle = 'rgba(10,9,4,0.55)';
@@ -1189,6 +1453,16 @@ function tick(){
   const dt = rawDt * (state==='choosing' ? timeScale : 1);
   if(state==='playing' || state==='choosing') update(dt);
   render();
+  
+  // Performance logging every 5 seconds
+  perfCounter += rawDt;
+  if (perfCounter - lastPerfLog > 5) {
+    lastPerfLog = perfCounter;
+    const frameTime = rawDt * 1000;
+    if (frameTime > 20) {
+      console.log(`[Perf] Frame time: ${frameTime.toFixed(2)}ms (${(1000/frameTime).toFixed(0)} FPS)`);
+    }
+  }
 }
 
 function updateChoiceUI(now){
@@ -1243,6 +1517,7 @@ function hitPlayer(runtime){
 }
 
 function update(dt){
+  const updateStart = performance.now();
   elapsed += dt;
   if(hitCooldown>0) hitCooldown -= dt;
   speedBonus = Math.max(0, speedBonus - SPEED_DECAY*dt);
@@ -1312,7 +1587,14 @@ function update(dt){
     } else { pitGraceTimer = 0; }
   } else { pitGraceTimer = 0; }
 
-  refreshMazeMeshes(px,pz);
+  // Only refresh maze when player moves to a new cell
+  const [newCX, newCZ] = worldToCell(px,pz);
+  if (newCX !== lastCellX || newCZ !== lastCellZ) {
+    lastCellX = newCX;
+    lastCellZ = newCZ;
+    mazeUpdateCounter++;
+    refreshMazeMeshes(px,pz);
+  }
 
   if(elapsed - lastSpawnAt > spawnIntervalCur() && spawnQueue.length){
     lastSpawnAt = elapsed;
@@ -1395,9 +1677,16 @@ function update(dt){
   if(botCountDisplay) {
     botCountDisplay.textContent = 'Bots: ' + activeInstances.length + '/' + expectedBotCountCur();
   }
+  
+  // Performance monitoring
+  const updateTime = performance.now() - updateStart;
+  if (updateTime > 5) {
+    console.log(`[Perf] update: ${updateTime.toFixed(2)}ms`);
+  }
 }
 
 function render(){
+  const renderStart = performance.now();
   let eyeY = EYE_HEIGHT + playerY;
   if(sliding) eyeY = SLIDE_HEIGHT + playerY;
   let bobX = 0;
@@ -1443,6 +1732,11 @@ function render(){
   renderer.setScissorTest(false);
 
   drawMinimap();
+  
+  const renderTime = performance.now() - renderStart;
+  if (renderTime > 8) {
+    console.log(`[Perf] render: ${renderTime.toFixed(2)}ms`);
+  }
 }
 
 function dieByBot(runtime, message){
@@ -1450,7 +1744,6 @@ function dieByBot(runtime, message){
   state = 'dead';
   const mySeq = ++deathSeq;
 
-  // Record who killed the player
   if (runtime) {
     killedBy = runtime.def.name;
   } else if (message) {
@@ -1468,12 +1761,6 @@ function dieByBot(runtime, message){
   }
   js.style.display = 'flex';
 
-  if(!message && runtime && runtime.gainNode){
-    runtime.gainNode.gain.value = 1.6;
-    if(runtime.shaperNode) runtime.shaperNode.curve = distortionCurve(380);
-    if(runtime.audioEl) runtime.audioEl.playbackRate = 0.85;
-  }
-
   if(document.pointerLockElement) {
     document.exitPointerLock();
   }
@@ -1488,39 +1775,69 @@ function dieByBot(runtime, message){
     } else {
       document.getElementById('goTitle').textContent = 'CAUGHT';
     }
-    document.getElementById('finalTime').textContent = elapsed.toFixed(1)+'s';
-    document.getElementById('finalDist').textContent = Math.floor(Math.hypot(px,pz))+'m';
+    
+    const finalTime = elapsed;
+    const finalDist = Math.floor(Math.hypot(px,pz));
+    
+    document.getElementById('finalTime').textContent = finalTime.toFixed(1)+'s';
+    document.getElementById('finalDist').textContent = finalDist+'m';
     document.getElementById('finalKiller').textContent = 'Killed by: ' + killedBy;
     document.getElementById('finalUpgrades').textContent = 'Upgrades collected: ' + upgradesCollected;
-    document.getElementById('gameOverScreen').style.display = 'flex';
     
-    // Submit high score
-    submitHighScore(elapsed, Math.floor(Math.hypot(px,pz)), killedBy);
+    // Check if this is a high score
+    getHighScores().then(scores => {
+      renderHighScores(scores);
+      const isHighScore = checkIfHighScore(finalTime, finalDist);
+      
+      if (isHighScore && playerUsername) {
+        // Already have username, submit directly
+        submitHighScore(finalTime, finalDist, killedBy);
+      } else if (isHighScore && !playerUsername) {
+        // Show username prompt
+        document.getElementById('gameOverScreen').style.display = 'none';
+        document.getElementById('usernamePrompt').style.display = 'flex';
+        document.getElementById('usernameInput').focus();
+        // Store the score to submit later
+        window._pendingScore = { time: finalTime, distance: finalDist, killedBy: killedBy };
+      } else {
+        // Not a high score, just show game over
+        document.getElementById('gameOverScreen').style.display = 'flex';
+      }
+    }).catch(() => {
+      // If high score fetch fails, just show game over
+      document.getElementById('gameOverScreen').style.display = 'flex';
+    });
+    
   }, message ? 300 : 900);
 }
 
 // ============================================================
 // UI EVENT HANDLERS
 // ============================================================
-document.getElementById('startBtn').addEventListener('click', ()=>{
-  const username = getUsername();
-  if (!username) {
-    document.getElementById('startScreen').style.display = 'none';
-    document.getElementById('usernamePrompt').style.display = 'flex';
-    document.getElementById('usernameInput').focus();
-    return;
-  }
-  startGame();
-});
-
 document.getElementById('usernameConfirm').addEventListener('click', ()=>{
   const input = document.getElementById('usernameInput');
   const name = input.value.trim();
   if (name.length > 0) {
     setUsername(name);
     document.getElementById('usernamePrompt').style.display = 'none';
-    startGame();
+    
+    // Submit pending score if exists
+    if (window._pendingScore) {
+      submitHighScore(
+        window._pendingScore.time,
+        window._pendingScore.distance,
+        window._pendingScore.killedBy
+      );
+      window._pendingScore = null;
+    }
+    document.getElementById('gameOverScreen').style.display = 'flex';
   }
+});
+
+document.getElementById('usernameSkip').addEventListener('click', ()=>{
+  document.getElementById('usernamePrompt').style.display = 'none';
+  window._pendingScore = null;
+  document.getElementById('gameOverScreen').style.display = 'flex';
 });
 
 document.getElementById('usernameInput').addEventListener('keydown', (e)=>{
@@ -1529,9 +1846,16 @@ document.getElementById('usernameInput').addEventListener('keydown', (e)=>{
   }
 });
 
+document.getElementById('startBtn').addEventListener('click', ()=>{
+  const username = getUsername();
+  // Pre-fetch high scores
+  getHighScores();
+  document.getElementById('startScreen').style.display = 'none';
+  startGame();
+});
+
 function startGame() {
   if (audioCtx && audioCtx.resume) audioCtx.resume();
-  document.getElementById('startScreen').style.display = 'none';
   document.getElementById('usernamePrompt').style.display = 'none';
   resetGame();
   state = 'playing';
@@ -1544,7 +1868,7 @@ document.getElementById('retryBtn').addEventListener('click', ()=>{
 });
 
 // ============================================================
-// AUDIO CONTEXT (placeholder for now)
+// AUDIO CONTEXT (placeholder)
 // ============================================================
 let audioCtx;
 try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
@@ -1565,13 +1889,13 @@ function distortionCurve(amount){
 // ============================================================
 resetGame();
 
-// Show username prompt on first load if needed
-if (!getUsername()) {
-  // Wait a moment then show
+// Show comic on first load
+if (!comicShown) {
+  comicShown = true;
+  // Wait a moment then show comic
   setTimeout(() => {
-    document.getElementById('usernamePrompt').style.display = 'flex';
-    document.getElementById('usernameInput').focus();
-  }, 100);
+    showComic();
+  }, 300);
 }
 
 requestAnimationFrame(tick);
