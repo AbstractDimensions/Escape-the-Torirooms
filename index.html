@@ -221,15 +221,15 @@
 
 <!-- Comic Screen -->
 <div id="comicScreen">
-  <img id="comicImage" src="assets/menu/comic/comic.jpg" alt="Comic" style="display:block;" onerror="this.style.display='none'; document.getElementById('comicSkip').classList.add('visible');">
+  <img id="comicImage" src="" alt="Comic" style="display:block;">
   <button id="comicSkip">Skip</button>
 </div>
 
 <!-- Start Screen -->
 <div id="startScreen">
   <h1>
-    <img src="assets/menu/title/title.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.5</span>';">
-    <span class="version-tag">v1.0.5</span>
+    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.6</span>';">
+    <span class="version-tag">v1.0.6</span>
   </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
@@ -277,7 +277,7 @@
 // ============================================================
 // VERSION
 // ============================================================
-const VERSION = 'v1.0.5';
+const VERSION = 'v1.0.6';
 
 // ============================================================
 // CONFIGURATION
@@ -329,56 +329,59 @@ const BOT_RESPAWN_DELAY = 5;
 const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbw1TSJCYskcAjAhL2xENVnZU15jJ06YQ2d6PEJkgVVPGGbQ-crFsiWe0AVe_JeUgJ0iKQ/exec';
 
 // ============================================================
-// FILE LOADING SYSTEM - Only jpg, jpeg, png, webp for images
+// FILE CACHE - GitHub API scan
 // ============================================================
-const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp'];
-const AUDIO_EXTS = ['mp3', 'ogg', 'wav', 'm4a', 'aac', 'flac', 'mp4'];
+let fileCache = {};
+let fileCacheLoaded = false;
 
-function loadNumberedFiles(baseName, extensions, maxAttempts = 10) {
-  return new Promise((resolve) => {
-    const results = [];
-    
-    function checkNext(num) {
-      if (num > maxAttempts) {
-        resolve(results);
-        return;
-      }
-      
-      const name = baseName + num;
-      let extIndex = 0;
-      let found = false;
-      
-      function tryExtension() {
-        if (extIndex >= extensions.length) {
-          if (!found) {
-            resolve(results);
-          }
-          return;
+async function scanGitHubFiles() {
+  const repo = 'AbstractDimensions/Escape-the-Torirooms';
+  const baseUrl = `https://api.github.com/repos/${repo}/contents`;
+  
+  console.log('📂 Scanning GitHub repository for files...');
+  
+  const folders = [
+    '', // Root
+  ];
+  
+  const allFiles = {};
+  
+  async function scanFolder(path) {
+    const url = path ? `${baseUrl}/${path}` : baseUrl;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return;
+      const data = await response.json();
+      for (const item of data) {
+        if (item.type === 'file') {
+          const ext = item.name.split('.').pop().toLowerCase();
+          const base = item.name.substring(0, item.name.lastIndexOf('.'));
+          if (!allFiles[base]) allFiles[base] = [];
+          allFiles[base].push(ext);
         }
-        
-        const url = name + '.' + extensions[extIndex];
-        fetch(url, { method: 'HEAD' })
-          .then(res => {
-            if (res.ok) {
-              results.push(url);
-              found = true;
-              checkNext(num + 1);
-            } else {
-              extIndex++;
-              tryExtension();
-            }
-          })
-          .catch(() => {
-            extIndex++;
-            tryExtension();
-          });
       }
-      
-      tryExtension();
+    } catch(e) {
+      console.log('⚠️ Error scanning folder:', path, e.message);
     }
-    
-    checkNext(1);
-  });
+  }
+  
+  await scanFolder('');
+  
+  fileCache = allFiles;
+  fileCacheLoaded = true;
+  console.log('📂 File cache loaded:', Object.keys(fileCache).length, 'base filenames found');
+  console.log('📂 Sample:', Object.keys(fileCache).slice(0, 20));
+}
+
+function getFileUrl(baseName) {
+  if (!fileCache[baseName]) return null;
+  const ext = fileCache[baseName][0];
+  return baseName + '.' + ext;
+}
+
+function getFileUrls(baseName) {
+  if (!fileCache[baseName]) return [];
+  return fileCache[baseName].map(ext => baseName + '.' + ext);
 }
 
 // ============================================================
@@ -518,11 +521,11 @@ function floorDiv(a,b){ return Math.floor(a/b); }
 function mod(a,b){ return ((a%b)+b)%b; }
 
 // ============================================================
-// DUNGEON GENERATION
+// DUNGEON GENERATION - Older expansive rooms + corridors 1-4 wide
 // ============================================================
 const WALL=0, OPEN=1, PIT=2, WALL_SLIT=3;
-const MIN_ROOM_SIZE = 2;
-const MAX_ROOM_SIZE = 5;
+const MIN_ROOM_SIZE = 3;
+const MAX_ROOM_SIZE = 7;
 let mazeSeed = 1;
 let roomOffsetX = 0, roomOffsetZ = 0;
 let cellCache = new Map();
@@ -538,9 +541,9 @@ function getRoomSize(rx, rz, seed) {
   return Math.floor(MIN_ROOM_SIZE + h * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1));
 }
 
-function getCorridorLength(rx, rz, dir, seed) {
-  const h = hash2(rx*13 + dir*7, rz*13 + dir*7, seed + 999);
-  return 3 + Math.floor(h * 13); // 3-15 cells long
+function getCorridorWidth(rx, rz, dir, seed) {
+  const h = hash2(rx*17 + dir*11, rz*17 + dir*11, seed + 555);
+  return 1 + Math.floor(h * 4); // 1-4 cells wide
 }
 
 function getCell(cx0,cz0){
@@ -557,10 +560,10 @@ function getCell(cx0,cz0){
   const cx = cx0 + roomOffsetX;
   const cz = cz0 + roomOffsetZ;
   
-  const rx = floorDiv(cx, 10);
-  const rz = floorDiv(cz, 10);
-  const localX = cx - rx * 10;
-  const localZ = cz - rz * 10;
+  const rx = floorDiv(cx, 12);
+  const rz = floorDiv(cz, 12);
+  const localX = cx - rx * 12;
+  const localZ = cz - rz * 12;
   
   const roomSizeX = getRoomSize(rx, rz, mazeSeed);
   const roomSizeZ = getRoomSize(rx, rz, mazeSeed + 1);
@@ -571,17 +574,17 @@ function getCell(cx0,cz0){
   let type;
 
   if(inRoomX && inRoomZ) {
-    // Inside a room
+    // Inside a room - more open, occasional pits/slits
     const roomRand = hash2(rx, rz, mazeSeed + 51);
     
-    if(roomRand < 0.25) {
+    if(roomRand < 0.20) {
       const pattern = Math.floor(hash2(rx, rz, mazeSeed + 77) * 3);
       let isPit = false;
       if(pattern === 0) isPit = ((localX + localZ) % 2 === 0 && localX > 0 && localX < roomSizeX-1 && localZ > 0 && localZ < roomSizeZ-1);
       else if(pattern === 1) isPit = (localX === Math.floor(roomSizeX/2) || localZ === Math.floor(roomSizeZ/2));
       else isPit = ((localX === 0 || localX === roomSizeX-1) && (localZ === 0 || localZ === roomSizeZ-1));
       type = isPit ? PIT : OPEN;
-    } else if(roomRand < 0.35) {
+    } else if(roomRand < 0.30) {
       const n = valueNoise(cx*0.4, cz*0.4, mazeSeed+3);
       const r = hash2(cx,cz, mazeSeed+909);
       if(n > 0.65) type = (r < 0.3) ? WALL_SLIT : WALL;
@@ -590,52 +593,24 @@ function getCell(cx0,cz0){
       type = OPEN;
     }
   } else {
-    // OUTSIDE ROOMS - corridors and walls
+    // OUTSIDE ROOMS - corridors (1-4 cells wide, infinite length until next room)
+    const isHorizontalCorridor = (localZ === roomSizeZ);
+    const isVerticalCorridor = (localX === roomSizeX);
     
-    // FIXED: Check if we're on a corridor path
-    // Corridors should connect from the center of room edges
-    const halfRoomX = Math.floor(roomSizeX / 2);
-    const halfRoomZ = Math.floor(roomSizeZ / 2);
+    // Get corridor width
+    const corridorWidth = getCorridorWidth(rx, rz, isHorizontalCorridor ? 1 : 2, mazeSeed);
+    const halfWidth = Math.floor(corridorWidth / 2);
     
-    // Horizontal corridor: when localZ is near the center of the room's bottom edge
-    const isHorizontalCorridorRow = (localZ === roomSizeZ);
-    // Vertical corridor: when localX is near the center of the room's right edge
-    const isVerticalCorridorCol = (localX === roomSizeX);
+    // Check if we're within the corridor band
+    const inHorizontalBand = isHorizontalCorridor && localX >= roomSizeX && Math.abs(localZ - roomSizeZ) <= halfWidth;
+    const inVerticalBand = isVerticalCorridor && localZ >= roomSizeZ && Math.abs(localX - roomSizeX) <= halfWidth;
     
-    if (isHorizontalCorridorRow && localX >= roomSizeX) {
-      // Horizontal corridor going right from the room center
-      const corridorLength = getCorridorLength(rx, rz, 1, mazeSeed);
-      const offset = localX - roomSizeX;
-      if (offset < corridorLength) {
-        const mid = Math.floor(corridorLength / 2);
-        if (offset === mid) {
-          const r = hash2(rx*7 + 3, rz*7 + 3, mazeSeed + 131);
-          if(r < 0.50) type = OPEN;
-          else if(r < 0.83) type = WALL_SLIT;
-          else type = PIT;
-        } else {
-          type = OPEN;
-        }
-      } else {
-        type = WALL;
-      }
-    } else if (isVerticalCorridorCol && localZ >= roomSizeZ) {
-      // Vertical corridor going down from the room center
-      const corridorLength = getCorridorLength(rx, rz, 2, mazeSeed);
-      const offset = localZ - roomSizeZ;
-      if (offset < corridorLength) {
-        const mid = Math.floor(corridorLength / 2);
-        if (offset === mid) {
-          const r = hash2(rx*7 + 7, rz*7 + 7, mazeSeed + 313);
-          if(r < 0.50) type = OPEN;
-          else if(r < 0.83) type = WALL_SLIT;
-          else type = PIT;
-        } else {
-          type = OPEN;
-        }
-      } else {
-        type = WALL;
-      }
+    if (inHorizontalBand) {
+      // Horizontal corridor - everything is OPEN (no obstacles)
+      type = OPEN;
+    } else if (inVerticalBand) {
+      // Vertical corridor - everything is OPEN (no obstacles)
+      type = OPEN;
     } else {
       type = WALL;
     }
@@ -783,7 +758,7 @@ function refreshMazeMeshes(px,pz){
 }
 
 // ============================================================
-// COLLISION - Simple cell-based check
+// COLLISION - Full cell collision (no gaps)
 // ============================================================
 function isInsideWall(x,z) {
   const t = cellTypeAtWorld(x,z);
@@ -791,28 +766,40 @@ function isInsideWall(x,z) {
 }
 
 function resolveCollision(x,z) {
-  // Check if player is inside a wall cell
   const [cx,cz] = worldToCell(x,z);
-  const cell = getCell(cx,cz);
-  const blocks = isInsideWall(x,z);
   
-  if (!blocks) return [x,z];
-  
-  // Push out of wall
-  const [wx,wz] = cellCenter(cx,cz);
-  const halfX = CELL/2 - PLAYER_RADIUS - 0.01;
-  const halfZ = CELL/2 - PLAYER_RADIUS - 0.01;
-  
-  // Find the nearest edge
-  const dx = x - wx;
-  const dz = z - wz;
-  const absDx = Math.abs(dx);
-  const absDz = Math.abs(dz);
-  
-  if (absDx > absDz) {
-    x = wx + Math.sign(dx) * halfX;
-  } else {
-    z = wz + Math.sign(dz) * halfZ;
+  // Check all 4 cells around the player
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dz = -1; dz <= 1; dz++) {
+      const checkX = cx + dx;
+      const checkZ = cz + dz;
+      const t = getCell(checkX, checkZ).type;
+      const blocks = (t === WALL) || (t === WALL_SLIT && !sliding);
+      
+      if (!blocks) continue;
+      
+      const [wx,wz] = cellCenter(checkX, checkZ);
+      const halfX = CELL/2 - PLAYER_RADIUS;
+      const halfZ = CELL/2 - PLAYER_RADIUS;
+      
+      // Check if player overlaps with this wall cell
+      const overlapX = (x > wx - halfX && x < wx + halfX);
+      const overlapZ = (z > wz - halfZ && z < wz + halfZ);
+      
+      if (overlapX && overlapZ) {
+        // Push out in the direction of least overlap
+        const dx2 = x - wx;
+        const dz2 = z - wz;
+        const absDx = Math.abs(dx2);
+        const absDz = Math.abs(dz2);
+        
+        if (absDx > absDz) {
+          x = wx + Math.sign(dx2) * halfX;
+        } else {
+          z = wz + Math.sign(dz2) * halfZ;
+        }
+      }
+    }
   }
   
   return [x,z];
@@ -902,14 +889,10 @@ function buildBotRuntime(bot){
   const runtime = { 
     def:bot, 
     placeholderTex:placeholderTexture(getBotColor(bot.id), bot.name),
-    loadedImageTex:null,
     imgEl:null,
-    audioEl:null,
-    gainNode:null,
-    shaperNode:null,
     instance:null,
     imageLoaded: false,
-    images: [],
+    imageUrl: null,
     sounds: [],
     music: []
   };
@@ -932,16 +915,20 @@ function shuffledRoster(){
 async function loadBotAssets(runtime) {
   const botId = runtime.def.id;
   
-  const imageUrls = await loadNumberedFiles(botId, IMAGE_EXTS, 10);
-  runtime.images = imageUrls;
+  // Get image URL from cache
+  const imageUrls = getFileUrls(botId);
   if (imageUrls.length > 0) {
+    runtime.imageUrl = imageUrls[0];
     const img = new Image();
     img.onload = function() {
       runtime.imgEl = img;
       runtime.imageLoaded = true;
       console.log(`✅ Image loaded: ${imageUrls[0]}`);
       if (runtime.instance) {
-        runtime.instance.sprite.material.map = new THREE.Texture(img);
+        // Update sprite texture
+        const tex = new THREE.Texture(img);
+        tex.needsUpdate = true;
+        runtime.instance.sprite.material.map = tex;
         runtime.instance.sprite.material.needsUpdate = true;
       }
     };
@@ -951,13 +938,15 @@ async function loadBotAssets(runtime) {
     img.src = imageUrls[0];
   }
   
-  const soundUrls = await loadNumberedFiles(botId + '_sound', AUDIO_EXTS, 10);
+  // Get sound URLs from cache
+  const soundUrls = getFileUrls(botId + '_sound');
   runtime.sounds = soundUrls;
   if (soundUrls.length > 0) {
     console.log(`✅ ${soundUrls.length} sound(s) found for ${botId}`);
   }
   
-  const musicUrls = await loadNumberedFiles(botId + '_music', AUDIO_EXTS, 10);
+  // Get music URLs from cache
+  const musicUrls = getFileUrls(botId + '_music');
   runtime.music = musicUrls;
   if (musicUrls.length > 0) {
     console.log(`✅ ${musicUrls.length} music track(s) found for ${botId}`);
@@ -987,6 +976,7 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   
   const [sx,sz] = findOpenSpawnPoint(px, pz, minDist, maxDist, preferDirection);
   
+  // Use loaded image or placeholder
   let texture;
   if (runtime.imgEl) {
     texture = new THREE.Texture(runtime.imgEl);
@@ -1078,7 +1068,7 @@ function stepBot(inst, px, pz, dt, botSpeed){
     }
   }
   
-  // Collision check for bot - push out of walls
+  // Collision check for bot
   if(isBlockedForBot(inst.x, inst.z)) {
     const [cx,cz] = worldToCell(inst.x, inst.z);
     const [wx,wz] = cellCenter(cx,cz);
@@ -1343,34 +1333,33 @@ function playAmbience() {
     if (!audioCtx) return;
   }
   
-  loadNumberedFiles('ambience', AUDIO_EXTS, 5).then(urls => {
-    if (urls.length > 0) {
-      console.log('🎵 Found ambience files:', urls);
-      const url = urls[0];
-      fetch(url)
-        .then(r => r.arrayBuffer())
-        .then(buffer => audioCtx.decodeAudioData(buffer))
-        .then(decoded => {
-          if (ambienceSource) {
-            ambienceSource.stop();
-          }
-          
-          ambienceGain = audioCtx.createGain();
-          ambienceGain.gain.value = 0.3;
-          ambienceGain.connect(audioCtx.destination);
-          
-          ambienceSource = audioCtx.createBufferSource();
-          ambienceSource.buffer = decoded;
-          ambienceSource.loop = true;
-          ambienceSource.connect(ambienceGain);
-          ambienceSource.start();
-          console.log('🎵 Ambience playing');
-        })
-        .catch(err => console.log('❌ Ambience failed:', err.message));
-    } else {
-      console.log('❌ No ambience files found');
-    }
-  });
+  const urls = getFileUrls('ambience');
+  if (urls.length > 0) {
+    console.log('🎵 Found ambience files:', urls);
+    const url = urls[0];
+    fetch(url)
+      .then(r => r.arrayBuffer())
+      .then(buffer => audioCtx.decodeAudioData(buffer))
+      .then(decoded => {
+        if (ambienceSource) {
+          ambienceSource.stop();
+        }
+        
+        ambienceGain = audioCtx.createGain();
+        ambienceGain.gain.value = 0.3;
+        ambienceGain.connect(audioCtx.destination);
+        
+        ambienceSource = audioCtx.createBufferSource();
+        ambienceSource.buffer = decoded;
+        ambienceSource.loop = true;
+        ambienceSource.connect(ambienceGain);
+        ambienceSource.start();
+        console.log('🎵 Ambience playing');
+      })
+      .catch(err => console.log('❌ Ambience failed:', err.message));
+  } else {
+    console.log('❌ No ambience files found');
+  }
 }
 
 function stopAmbience() {
@@ -1386,32 +1375,31 @@ function playMenuMusic() {
     if (!audioCtx) return;
   }
   
-  loadNumberedFiles('menu', AUDIO_EXTS, 5).then(urls => {
-    if (urls.length > 0) {
-      console.log('🎵 Found menu music:', urls);
-      const url = urls[Math.floor(Math.random() * urls.length)];
-      fetch(url)
-        .then(r => r.arrayBuffer())
-        .then(buffer => audioCtx.decodeAudioData(buffer))
-        .then(decoded => {
-          if (menuSource) {
-            menuSource.stop();
-          }
-          
-          menuGain = audioCtx.createGain();
-          menuGain.gain.value = 0.2;
-          menuGain.connect(audioCtx.destination);
-          
-          menuSource = audioCtx.createBufferSource();
-          menuSource.buffer = decoded;
-          menuSource.loop = true;
-          menuSource.connect(menuGain);
-          menuSource.start();
-          console.log('🎵 Menu music playing');
-        })
-        .catch(err => console.log('❌ Menu music failed:', err.message));
-    }
-  });
+  const urls = getFileUrls('menu');
+  if (urls.length > 0) {
+    console.log('🎵 Found menu music:', urls);
+    const url = urls[Math.floor(Math.random() * urls.length)];
+    fetch(url)
+      .then(r => r.arrayBuffer())
+      .then(buffer => audioCtx.decodeAudioData(buffer))
+      .then(decoded => {
+        if (menuSource) {
+          menuSource.stop();
+        }
+        
+        menuGain = audioCtx.createGain();
+        menuGain.gain.value = 0.2;
+        menuGain.connect(audioCtx.destination);
+        
+        menuSource = audioCtx.createBufferSource();
+        menuSource.buffer = decoded;
+        menuSource.loop = true;
+        menuSource.connect(menuGain);
+        menuSource.start();
+        console.log('🎵 Menu music playing');
+      })
+      .catch(err => console.log('❌ Menu music failed:', err.message));
+  }
 }
 
 function stopMenuMusic() {
@@ -1511,33 +1499,14 @@ function showComic() {
   skipBtn.classList.remove('visible');
   img.style.transform = 'translateX(0%)';
   
-  img.src = 'assets/menu/comic/comic.jpg';
-  
-  const extensions = ['png', 'webp'];
-  let extIndex = 0;
-  function tryNextExt() {
-    if (extIndex >= extensions.length) return;
-    const testImg = new Image();
-    testImg.onload = function() {
-      img.src = 'assets/menu/comic/comic.' + extensions[extIndex];
-      img.style.display = 'block';
-    };
-    testImg.onerror = function() {
-      extIndex++;
-      tryNextExt();
-    };
-    testImg.src = 'assets/menu/comic/comic.' + extensions[extIndex];
+  const comicUrls = getFileUrls('comic');
+  if (comicUrls.length > 0) {
+    img.src = comicUrls[0];
+    img.style.display = 'block';
+  } else {
+    img.style.display = 'none';
+    skipBtn.classList.add('visible');
   }
-  
-  img.onerror = function() {
-    tryNextExt();
-    setTimeout(() => {
-      if (!img.complete || img.naturalWidth === 0) {
-        img.style.display = 'none';
-        skipBtn.classList.add('visible');
-      }
-    }, 1000);
-  };
   
   requestAnimationFrame(() => {
     img.classList.add('visible');
@@ -1562,6 +1531,13 @@ function showComic() {
     document.getElementById('startScreen').style.display = 'flex';
     screen.removeEventListener('click', showSkip);
     playMenuMusic();
+    
+    // Set title image
+    const titleImg = document.getElementById('titleImage');
+    const titleUrls = getFileUrls('title');
+    if (titleUrls.length > 0) {
+      titleImg.src = titleUrls[0];
+    }
   });
 }
 
@@ -1587,8 +1563,8 @@ function resetGame(){
   meshPool = new Map(); 
   cellCache = new Map();
   mazeSeed = Math.floor(Math.random()*99999)+1;
-  roomOffsetX = Math.floor(Math.random()*10);
-  roomOffsetZ = Math.floor(Math.random()*10);
+  roomOffsetX = Math.floor(Math.random()*12);
+  roomOffsetZ = Math.floor(Math.random()*12);
 
   px=0; pz=0; yaw=0; playerY=0; vy=0; onGround=true;
   sliding=false; slideSpeed=0; wallrunning=false;
@@ -1742,6 +1718,7 @@ function drawMinimap(){
   const RANGE = 26;
   const scale = (Math.min(W,H)/2) / RANGE;
   const cx0 = W/2, cy0 = H/2;
+  const cellSize = Math.max(2, scale * CELL);
 
   const [pcx,pcz] = worldToCell(px,pz);
   const cellSpan = Math.ceil(RANGE/CELL)+1;
@@ -1754,7 +1731,8 @@ function drawMinimap(){
       if(Math.hypot(rx,rz) > Math.min(W,H)/2) continue;
       miniCtx.fillStyle = '#e8dfa8';
       miniCtx.globalAlpha = t===WALL_SLIT? 0.4 : 0.85;
-      miniCtx.fillRect(cx0+rx-2, cy0+rz-2, 4, 4);
+      // Fill full cell
+      miniCtx.fillRect(cx0+rx-cellSize/2, cy0+rz-cellSize/2, cellSize, cellSize);
     }
   }
   miniCtx.globalAlpha = 1;
@@ -2172,7 +2150,6 @@ function dieByBot(runtime, message){
   }
 
   // INSTANT: Hide jumpscare and show game over immediately
-  // But keep jumpscare visible for a split second for the scare effect
   setTimeout(() => {
     if(deathSeq !== mySeq) return;
     js.style.display = 'none';
@@ -2195,10 +2172,8 @@ function dieByBot(runtime, message){
     
     stopAmbience();
     
-    // Show game over screen immediately
     document.getElementById('gameOverScreen').style.display = 'flex';
     
-    // Fetch high scores asynchronously
     getHighScores().then(scores => {
       const isHighScore = checkIfHighScore(finalTime, finalDist);
       renderHighScores(scores, finalTime, finalDist);
@@ -2212,7 +2187,7 @@ function dieByBot(runtime, message){
         window._pendingScore = { time: finalTime, distance: finalDist, killedBy: killedBy };
       }
     }).catch(() => {});
-  }, 300); // 300ms for jumpscare flash, then game over
+  }, 300);
 }
 
 // ============================================================
@@ -2290,29 +2265,37 @@ async function loadAllBotAssets() {
 // ============================================================
 // INITIALIZATION
 // ============================================================
-console.log('🚀 Initializing game v' + VERSION);
-
-// Ensure start screen is visible initially
-document.getElementById('startScreen').style.display = 'flex';
-
-// Show comic first
-if (!comicShown) {
-  comicShown = true;
-  document.getElementById('startScreen').style.display = 'none';
-  console.log('📖 Showing comic first');
-  setTimeout(() => {
-    showComic();
-  }, 300);
+async function init() {
+  console.log('🚀 Initializing game v' + VERSION);
+  
+  // Scan GitHub for files first
+  await scanGitHubFiles();
+  
+  // Ensure start screen is visible initially
+  document.getElementById('startScreen').style.display = 'flex';
+  
+  // Show comic first
+  if (!comicShown) {
+    comicShown = true;
+    document.getElementById('startScreen').style.display = 'none';
+    console.log('📖 Showing comic first');
+    setTimeout(() => {
+      showComic();
+    }, 300);
+  }
+  
+  // Load bot assets
+  await loadAllBotAssets();
+  
+  // Start the loop
+  resetGame();
+  requestAnimationFrame(tick);
+  
+  console.log('✅ Game initialization complete');
 }
 
-// Load bot assets
-loadAllBotAssets();
-
-// Start the loop
-resetGame();
-requestAnimationFrame(tick);
-
-console.log('✅ Game initialization complete');
+// Start everything
+init();
 })();
 </script>
 </body>
