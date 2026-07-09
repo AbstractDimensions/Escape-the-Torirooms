@@ -221,15 +221,15 @@
 
 <!-- Comic Screen -->
 <div id="comicScreen">
-  <img id="comicImage" src="comic.jpg" alt="Comic" style="display:block;" onerror="this.style.display='none'; document.getElementById('comicSkip').classList.add('visible');">
+  <img id="comicImage" src="assets/menu/comic/comic.jpg" alt="Comic" style="display:block;" onerror="this.style.display='none'; document.getElementById('comicSkip').classList.add('visible');">
   <button id="comicSkip">Skip</button>
 </div>
 
 <!-- Start Screen -->
 <div id="startScreen">
   <h1>
-    <img src="title.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.4</span>';">
-    <span class="version-tag">v1.0.4</span>
+    <img src="assets/menu/title/title.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.5</span>';">
+    <span class="version-tag">v1.0.5</span>
   </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
@@ -277,7 +277,7 @@
 // ============================================================
 // VERSION
 // ============================================================
-const VERSION = 'v1.0.4';
+const VERSION = 'v1.0.5';
 
 // ============================================================
 // CONFIGURATION
@@ -324,15 +324,14 @@ const BOB_FREQ       = 1.7;
 const EXPECTED_BOT_COUNT_BASE = 3;
 const EXPECTED_BOT_COUNT_GROWTH = 1;
 const BOT_RESPAWN_DELAY = 5;
-const BOT_SPAWN_DOT_THRESHOLD = 0.3; // How far behind the player bots can spawn
 
 // HIGH SCORES API
 const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbw1TSJCYskcAjAhL2xENVnZU15jJ06YQ2d6PEJkgVVPGGbQ-crFsiWe0AVe_JeUgJ0iKQ/exec';
 
 // ============================================================
-// FILE LOADING SYSTEM
+// FILE LOADING SYSTEM - Only jpg, jpeg, png, webp for images
 // ============================================================
-const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg'];
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp'];
 const AUDIO_EXTS = ['mp3', 'ogg', 'wav', 'm4a', 'aac', 'flac', 'mp4'];
 
 function loadNumberedFiles(baseName, extensions, maxAttempts = 10) {
@@ -593,12 +592,18 @@ function getCell(cx0,cz0){
   } else {
     // OUTSIDE ROOMS - corridors and walls
     
-    // Check if we're on a corridor path
+    // FIXED: Check if we're on a corridor path
+    // Corridors should connect from the center of room edges
+    const halfRoomX = Math.floor(roomSizeX / 2);
+    const halfRoomZ = Math.floor(roomSizeZ / 2);
+    
+    // Horizontal corridor: when localZ is near the center of the room's bottom edge
     const isHorizontalCorridorRow = (localZ === roomSizeZ);
+    // Vertical corridor: when localX is near the center of the room's right edge
     const isVerticalCorridorCol = (localX === roomSizeX);
     
     if (isHorizontalCorridorRow && localX >= roomSizeX) {
-      // Horizontal corridor going right
+      // Horizontal corridor going right from the room center
       const corridorLength = getCorridorLength(rx, rz, 1, mazeSeed);
       const offset = localX - roomSizeX;
       if (offset < corridorLength) {
@@ -615,7 +620,7 @@ function getCell(cx0,cz0){
         type = WALL;
       }
     } else if (isVerticalCorridorCol && localZ >= roomSizeZ) {
-      // Vertical corridor going down
+      // Vertical corridor going down from the room center
       const corridorLength = getCorridorLength(rx, rz, 2, mazeSeed);
       const offset = localZ - roomSizeZ;
       if (offset < corridorLength) {
@@ -777,39 +782,46 @@ function refreshMazeMeshes(px,pz){
   }
 }
 
-function resolveCollision(x,z){
-  const [pcx,pcz] = worldToCell(x,z);
-  for(let dx=-1; dx<=1; dx++){
-    for(let dz=-1; dz<=1; dz++){
-      const cx=pcx+dx, cz=pcz+dz;
-      const t = getCell(cx,cz).type;
-      const blocks = (t===WALL) || (t===WALL_SLIT && !sliding);
-      if(!blocks) continue;
-      const [wx,wz] = cellCenter(cx,cz);
-      const halfX=CELL/2, halfZ=CELL/2;
-      const closestX = Math.max(wx-halfX, Math.min(x, wx+halfX));
-      const closestZ = Math.max(wz-halfZ, Math.min(z, wz+halfZ));
-      const distX = x-closestX, distZ = z-closestZ;
-      const dist = Math.hypot(distX,distZ);
-      if(dist < PLAYER_RADIUS && dist>0.0001){
-        const push = (PLAYER_RADIUS-dist);
-        x += (distX/dist)*push; z += (distZ/dist)*push;
-      } else if(dist<=0.0001){ x += PLAYER_RADIUS; }
-    }
+// ============================================================
+// COLLISION - Simple cell-based check
+// ============================================================
+function isInsideWall(x,z) {
+  const t = cellTypeAtWorld(x,z);
+  return t === WALL || (t === WALL_SLIT && !sliding);
+}
+
+function resolveCollision(x,z) {
+  // Check if player is inside a wall cell
+  const [cx,cz] = worldToCell(x,z);
+  const cell = getCell(cx,cz);
+  const blocks = isInsideWall(x,z);
+  
+  if (!blocks) return [x,z];
+  
+  // Push out of wall
+  const [wx,wz] = cellCenter(cx,cz);
+  const halfX = CELL/2 - PLAYER_RADIUS - 0.01;
+  const halfZ = CELL/2 - PLAYER_RADIUS - 0.01;
+  
+  // Find the nearest edge
+  const dx = x - wx;
+  const dz = z - wz;
+  const absDx = Math.abs(dx);
+  const absDz = Math.abs(dz);
+  
+  if (absDx > absDz) {
+    x = wx + Math.sign(dx) * halfX;
+  } else {
+    z = wz + Math.sign(dz) * halfZ;
   }
+  
   return [x,z];
 }
 
 function findOpenSpawnPoint(fromX, fromZ, minDist, maxDist, preferDirection) {
-  // preferDirection is the angle we want to spawn in (0 = forward)
-  // Dot product approach: if direction is forward (dot > 0.3), spawn at render distance
-  // If behind (dot < -0.3), spawn closer
-  
   for(let tries=0; tries<60; tries++){
-    // Generate a random direction with bias toward preferDirection
     let ang;
     if(preferDirection !== null && tries < 30) {
-      // Bias toward preferred direction with some randomness
       const bias = 0.7;
       const randomAngle = (Math.random() - 0.5) * Math.PI * 0.8;
       ang = preferDirection + randomAngle * (1 - bias);
@@ -817,15 +829,13 @@ function findOpenSpawnPoint(fromX, fromZ, minDist, maxDist, preferDirection) {
       ang = Math.random() * Math.PI * 2;
     }
     
-    // Calculate dot product with forward direction (0, -1)
     const forwardX = 0;
     const forwardZ = -1;
     const dirX = Math.sin(ang);
     const dirZ = Math.cos(ang);
     const dot = dirX * forwardX + dirZ * forwardZ;
     
-    // Map dot (-1 to 1) to distance: dot=1 (forward) -> maxDist, dot=-1 (behind) -> minDist * 0.3
-    const normalizedDot = (dot + 1) / 2; // 0 to 1
+    const normalizedDot = (dot + 1) / 2;
     const distanceRange = maxDist - minDist * 0.3;
     const dist = minDist * 0.3 + normalizedDot * distanceRange;
     
@@ -834,7 +844,6 @@ function findOpenSpawnPoint(fromX, fromZ, minDist, maxDist, preferDirection) {
     
     if(cellTypeAtWorld(x,z) === OPEN) return [x,z];
   }
-  // Fallback
   return [fromX + (Math.random()-0.5)*CELL*2, fromZ + (Math.random()-0.5)*CELL*2];
 }
 
@@ -956,29 +965,23 @@ async function loadBotAssets(runtime) {
 }
 
 function spawnBot(runtime, px, pz, preferDirection=null){
-  // preferDirection: angle in radians (0 = forward, -PI/2 = left, PI/2 = right)
-  // Determine spawn distance based on dot product with forward direction
   let minDist = SPAWN_EDGE_MIN * 0.3;
   let maxDist = SPAWN_EDGE_MAX;
   
   if(preferDirection !== null) {
-    // Calculate dot product with forward direction (0, -1)
     const forwardX = 0;
     const forwardZ = -1;
     const dirX = Math.sin(preferDirection);
     const dirZ = Math.cos(preferDirection);
     const dot = dirX * forwardX + dirZ * forwardZ;
     
-    // dot: 1 = forward, -1 = behind
-    // Map dot to distance multiplier: forward = 1.0, behind = 0.2
-    const normalizedDot = (dot + 1) / 2; // 0 to 1
+    const normalizedDot = (dot + 1) / 2;
     const distMultiplier = 0.2 + normalizedDot * 0.8;
     
     minDist = SPAWN_EDGE_MIN * distMultiplier;
     maxDist = SPAWN_EDGE_MAX * distMultiplier;
   }
   
-  // Clamp distances
   minDist = Math.max(minDist, 2 * CELL);
   maxDist = Math.max(maxDist, minDist + CELL);
   
@@ -1072,6 +1075,20 @@ function stepBot(inst, px, pz, dt, botSpeed){
       inst.x = nx;
     } else if(!isBlockedForBot(inst.x, nz)) {
       inst.z = nz;
+    }
+  }
+  
+  // Collision check for bot - push out of walls
+  if(isBlockedForBot(inst.x, inst.z)) {
+    const [cx,cz] = worldToCell(inst.x, inst.z);
+    const [wx,wz] = cellCenter(cx,cz);
+    const half = CELL/2 - 0.2;
+    const dx2 = inst.x - wx;
+    const dz2 = inst.z - wz;
+    if(Math.abs(dx2) > Math.abs(dz2)) {
+      inst.x = wx + Math.sign(dx2) * half;
+    } else {
+      inst.z = wz + Math.sign(dz2) * half;
     }
   }
   
@@ -1494,22 +1511,22 @@ function showComic() {
   skipBtn.classList.remove('visible');
   img.style.transform = 'translateX(0%)';
   
-  img.src = 'comic.jpg';
+  img.src = 'assets/menu/comic/comic.jpg';
   
-  const extensions = ['png', 'webp', 'gif'];
+  const extensions = ['png', 'webp'];
   let extIndex = 0;
   function tryNextExt() {
     if (extIndex >= extensions.length) return;
     const testImg = new Image();
     testImg.onload = function() {
-      img.src = 'comic.' + extensions[extIndex];
+      img.src = 'assets/menu/comic/comic.' + extensions[extIndex];
       img.style.display = 'block';
     };
     testImg.onerror = function() {
       extIndex++;
       tryNextExt();
     };
-    testImg.src = 'comic.' + extensions[extIndex];
+    testImg.src = 'assets/menu/comic/comic.' + extensions[extIndex];
   }
   
   img.onerror = function() {
@@ -1810,12 +1827,10 @@ function updateChoiceUI(now){
 
   if(timeLeft<=0 && choiceActive){
     choiceActive = false;
-    // Auto-pick the middle option
     const mid = currentChoicePicks[1] || currentChoicePicks[0];
     if(mid) {
       finalizeChoice(mid);
     } else {
-      // Emergency fallback
       document.getElementById('powerupScreen').style.display = 'none';
       timeScale = 1;
       setBotAudioSlow(false);
@@ -1890,12 +1905,14 @@ function hitPlayer(runtime){
   
   playBotSound(runtime.def.id, false);
   
+  // Show jumpscare flash
   const js = document.getElementById('jumpscare');
   js.className = 'fallback';
   js.style.backgroundImage = 'none';
   js.style.backgroundColor = '#' + getBotColor(runtime.def.id).toString(16).padStart(6,'0');
   js.style.display = 'flex';
   setTimeout(()=>{ if(state==='playing') js.style.display='none'; }, 220);
+  
   if(runtime.instance){
     const dx = runtime.instance.x-px, dz = runtime.instance.z-pz;
     const d = Math.hypot(dx,dz)||1;
@@ -1918,6 +1935,7 @@ function update(dt){
   const desiredTurn = (pointerLocked ? kTurn : 0) + (pointerDown ? turnInput : 0);
   yaw -= desiredTurn * yawRateCur * dt;
 
+  // Wallrunning
   const sideL = [px + Math.sin(yaw-Math.PI/2)*(PLAYER_RADIUS+0.6), pz + Math.cos(yaw-Math.PI/2)*(PLAYER_RADIUS+0.6)];
   const sideR = [px + Math.sin(yaw+Math.PI/2)*(PLAYER_RADIUS+0.6), pz + Math.cos(yaw+Math.PI/2)*(PLAYER_RADIUS+0.6)];
   const wallLeft  = cellTypeAtWorld(sideL[0],sideL[1]) === WALL;
@@ -1962,6 +1980,7 @@ function update(dt){
     slideSpeed = Math.max(currentSpeed() * 0.3, SLIDE_FORCED_MIN);
   }
 
+  // Pit death
   const [hcx,hcz] = worldToCell(px,pz);
   const hereType = getCell(hcx,hcz).type;
   if(hereType===PIT){
@@ -1974,6 +1993,7 @@ function update(dt){
     } else { pitGraceTimer = 0; }
   } else { pitGraceTimer = 0; }
 
+  // Refresh maze
   const [newCX, newCZ] = worldToCell(px,pz);
   if (newCX !== lastCellX || newCZ !== lastCellZ) {
     lastCellX = newCX;
@@ -1982,6 +2002,7 @@ function update(dt){
     refreshMazeMeshes(px,pz);
   }
 
+  // Spawn bots
   if(elapsed - lastSpawnAt > spawnIntervalCur() && spawnQueue.length){
     lastSpawnAt = elapsed;
     const playerDir = Math.atan2(0, -1);
@@ -1989,6 +2010,7 @@ function update(dt){
     spawnBot(spawnQueue.shift(), px, pz, spawnDir);
   }
 
+  // Bot count management
   const targetCount = expectedBotCountCur();
   if(activeInstances.length < targetCount) {
     botRespawnTimer += dt;
@@ -2006,12 +2028,14 @@ function update(dt){
     botRespawnTimer = 0;
   }
 
+  // Pickups
   if(elapsed - lastHealSpawnAt > HEAL_SPAWN_INTERVAL){ lastHealSpawnAt = elapsed; spawnPickup('heal', px, pz); }
   if(elapsed - lastPowerSpawnAt > POWER_SPAWN_INTERVAL){ lastPowerSpawnAt = elapsed; spawnPickup('power', px, pz); }
 
   const bSpeed = botSpeedCur();
   activeInstances.forEach(inst=>stepBot(inst, px, pz, dt, bSpeed));
 
+  // Pickup magnet
   for(let i=pickups.length-1;i>=0;i--){
     const p = pickups[i];
     const dx = px-p.x, dz = pz-p.z;
@@ -2040,6 +2064,7 @@ function update(dt){
   healFlash = Math.max(0, healFlash - dt*1.6);
   document.getElementById('healFlash').style.opacity = healFlash.toFixed(3);
 
+  // Proximity effect
   let minDist = Infinity;
   activeInstances.forEach(inst=>{ const d=Math.hypot(inst.x-px, inst.z-pz); if(d<minDist) minDist=d; });
   const PROX_RANGE = 11;
@@ -2048,6 +2073,7 @@ function update(dt){
   const pulse = 0.7 + 0.3*Math.sin(elapsed*pulseSpeed);
   document.getElementById('proximity').style.opacity = (closeness*closeness*pulse).toFixed(3);
 
+  // UI updates
   const interval = spawnIntervalCur();
   const nextIn = Math.max(0, interval - (elapsed-lastSpawnAt));
   const spawnFrac = spawnQueue.length ? 1-(nextIn/interval) : 1;
@@ -2114,7 +2140,7 @@ function render(){
 }
 
 // ============================================================
-// DEATH - INSTANT, NO PAUSE
+// DEATH - INSTANT WITH FULL JUMPSCREE
 // ============================================================
 function dieByBot(runtime, message){
   if(state!=='playing') return;
@@ -2128,10 +2154,12 @@ function dieByBot(runtime, message){
     killedBy = 'Pit';
   }
 
+  // FULL JUMPSECARE FLASH - show the image
   const js = document.getElementById('jumpscare');
   js.className = '';
   if(!message && runtime && runtime.imgEl){
     js.style.backgroundImage = `url(${runtime.imgEl.src})`;
+    js.style.backgroundColor = 'transparent';
   } else {
     js.className = 'fallback';
     js.style.backgroundImage = 'none';
@@ -2144,45 +2172,47 @@ function dieByBot(runtime, message){
   }
 
   // INSTANT: Hide jumpscare and show game over immediately
-  js.style.display = 'none';
-  
-  if(message) {
-    document.getElementById('goTitle').textContent = message;
-  } else if(runtime) {
-    document.getElementById('goTitle').textContent = runtime.def.name.toUpperCase() + ' KILLED YOU';
-  } else {
-    document.getElementById('goTitle').textContent = 'CAUGHT';
-  }
-  
-  const finalTime = elapsed;
-  const finalDist = Math.floor(Math.hypot(px,pz));
-  
-  document.getElementById('finalTime').textContent = finalTime.toFixed(1)+'s';
-  document.getElementById('finalDist').textContent = finalDist+'m';
-  document.getElementById('finalKiller').textContent = 'Killed by: ' + killedBy;
-  document.getElementById('finalUpgrades').textContent = 'Upgrades collected: ' + upgradesCollected;
-  
-  stopAmbience();
-  
-  // Show game over screen immediately
-  document.getElementById('gameOverScreen').style.display = 'flex';
-  
-  // Fetch high scores asynchronously - don't block death screen
-  getHighScores().then(scores => {
-    const isHighScore = checkIfHighScore(finalTime, finalDist);
-    renderHighScores(scores, finalTime, finalDist);
+  // But keep jumpscare visible for a split second for the scare effect
+  setTimeout(() => {
+    if(deathSeq !== mySeq) return;
+    js.style.display = 'none';
     
-    if (isHighScore && playerUsername) {
-      submitHighScore(finalTime, finalDist, killedBy);
-    } else if (isHighScore && !playerUsername) {
-      document.getElementById('gameOverScreen').style.display = 'none';
-      document.getElementById('usernamePrompt').style.display = 'flex';
-      document.getElementById('usernameInput').focus();
-      window._pendingScore = { time: finalTime, distance: finalDist, killedBy: killedBy };
+    if(message) {
+      document.getElementById('goTitle').textContent = message;
+    } else if(runtime) {
+      document.getElementById('goTitle').textContent = runtime.def.name.toUpperCase() + ' KILLED YOU';
+    } else {
+      document.getElementById('goTitle').textContent = 'CAUGHT';
     }
-  }).catch(() => {
-    // Silently fail - game over screen is already showing
-  });
+    
+    const finalTime = elapsed;
+    const finalDist = Math.floor(Math.hypot(px,pz));
+    
+    document.getElementById('finalTime').textContent = finalTime.toFixed(1)+'s';
+    document.getElementById('finalDist').textContent = finalDist+'m';
+    document.getElementById('finalKiller').textContent = 'Killed by: ' + killedBy;
+    document.getElementById('finalUpgrades').textContent = 'Upgrades collected: ' + upgradesCollected;
+    
+    stopAmbience();
+    
+    // Show game over screen immediately
+    document.getElementById('gameOverScreen').style.display = 'flex';
+    
+    // Fetch high scores asynchronously
+    getHighScores().then(scores => {
+      const isHighScore = checkIfHighScore(finalTime, finalDist);
+      renderHighScores(scores, finalTime, finalDist);
+      
+      if (isHighScore && playerUsername) {
+        submitHighScore(finalTime, finalDist, killedBy);
+      } else if (isHighScore && !playerUsername) {
+        document.getElementById('gameOverScreen').style.display = 'none';
+        document.getElementById('usernamePrompt').style.display = 'flex';
+        document.getElementById('usernameInput').focus();
+        window._pendingScore = { time: finalTime, distance: finalDist, killedBy: killedBy };
+      }
+    }).catch(() => {});
+  }, 300); // 300ms for jumpscare flash, then game over
 }
 
 // ============================================================
@@ -2261,10 +2291,6 @@ async function loadAllBotAssets() {
 // INITIALIZATION
 // ============================================================
 console.log('🚀 Initializing game v' + VERSION);
-
-// Hide loading log
-const logContainer = document.getElementById('loadingLog');
-if (logContainer) logContainer.style.display = 'none';
 
 // Ensure start screen is visible initially
 document.getElementById('startScreen').style.display = 'flex';
