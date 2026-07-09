@@ -76,20 +76,22 @@
   
   #comicScreen {
     padding:0; background:#000; overflow:hidden;
-    cursor:pointer;
+    cursor:default;
+    justify-content:flex-start;
   }
   #comicImage {
     width:100%; height:100%; object-fit:cover;
     opacity:0; transition:opacity 1.5s ease;
     transform: translateX(0%);
+    flex-shrink:0;
   }
   #comicImage.visible { opacity:1; }
   #comicImage.scrolling { 
-    animation: comicScroll 8s linear forwards;
+    animation: comicScroll 10s linear forwards;
   }
   @keyframes comicScroll {
     0% { transform: translateX(0%); }
-    100% { transform: translateX(-20%); }
+    100% { transform: translateX(-15%); }
   }
   #comicSkip {
     position:absolute; bottom:40px; left:50%; transform:translateX(-50%);
@@ -101,8 +103,9 @@
   #comicSkip.visible { opacity:1; pointer-events:auto; }
   #comicSkip:hover { background:#e8dfa8; color:#111; }
 
-  h1 { font-size:26px; letter-spacing:3px; margin-bottom:6px; text-transform:uppercase;}
-  h1 img { max-width:80%; max-height:200px; object-fit:contain; }
+  h1 { font-size:26px; letter-spacing:3px; margin-bottom:6px; text-transform:uppercase; }
+  h1 img { max-width:80%; max-height:200px; object-fit:contain; display:block; margin:0 auto; }
+  .title-placeholder { font-size:32px; letter-spacing:4px; color:#e8dfa8; }
   p.sub { opacity:0.65; font-size:13px; max-width:320px; line-height:1.6; margin: 6px 0 22px; }
   button {
     font-family:'Courier New', monospace; background:none; border:1px solid #e8dfa8; color:#e8dfa8;
@@ -208,13 +211,13 @@
 
 <!-- Comic Screen -->
 <div id="comicScreen">
-  <img id="comicImage" src="assets/comic-strip.jpg" alt="Comic" onerror="this.style.display='none'; document.getElementById('comicSkip').classList.add('visible');">
+  <img id="comicImage" src="assets/comic-strip.jpg" alt="Comic" style="display:block;" onerror="this.style.display='none'; document.getElementById('comicSkip').classList.add('visible');">
   <button id="comicSkip">Skip</button>
 </div>
 
 <!-- Start Screen -->
 <div id="startScreen">
-  <h1><img src="assets/title-image.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.textContent='THE BACKROOMS';"></h1>
+  <h1><img src="assets/title-image.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span>';"></h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
   Slide through low wall-slits. Grab green pellets to heal, blue ones for upgrades.<br>
@@ -306,21 +309,6 @@ const BOT_RESPAWN_DELAY = 5;
 
 // HIGH SCORES API
 const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbw1TSJCYskcAjAhL2xENVnZU15jJ06YQ2d6PEJkgVVPGGbQ-crFsiWe0AVe_JeUgJ0iKQ/exec';
-
-/* mutable, upgrade-affected tuning */
-let baseSpeedCur   = BASE_SPEED;
-let gravityCur     = GRAVITY;
-let yawRateCur     = YAW_RATE;
-let jumpBoostCur   = COMBO_BASE;
-let slideBoostCur  = COMBO_BASE;
-let slideFrictionCur = 0.5;
-let dmgResistMult  = 1.0;
-let healBonusCur   = 0;
-let timeScale      = 1;
-
-// Performance logging
-let perfCounter = 0;
-let lastPerfLog = 0;
 
 // ============================================================
 // THREE.JS SETUP
@@ -429,7 +417,6 @@ const ceilMat  = new THREE.MeshStandardMaterial({map:ceilTex, roughness:0.9, sid
 const pitWallMat = new THREE.MeshBasicMaterial({map:pitWallTex, side:THREE.DoubleSide});
 const pitFloorMat = new THREE.MeshBasicMaterial({map:pitFloorTex, side:THREE.DoubleSide});
 
-// Use PlaneGeometry for pit walls (no gaps!)
 const pitWallPlaneGeo = new THREE.PlaneGeometry(CELL * 0.92, PIT_DEPTH);
 const pitFloorGeo = new THREE.PlaneGeometry(CELL * 0.8, CELL * 0.8);
 
@@ -485,7 +472,6 @@ function getCorridorLength(rx, rz, dir, seed) {
   return 1 + Math.floor(h * 4);
 }
 
-// Check if a cell is a pit
 function isPit(cx, cz) {
   const key = cellKey(cx, cz);
   const cell = cellCache.get(key);
@@ -536,7 +522,6 @@ function getCell(cx0,cz0){
       type = OPEN;
     }
   } else if(inRoomX !== inRoomZ) {
-    // Corridor: 50% open, 33% slit, 17% pit
     const isHorizontal = !inRoomX;
     const dirTag = isHorizontal ? 1 : 2;
     const corridorLength = getCorridorLength(rx, rz, dirTag, mazeSeed);
@@ -579,7 +564,6 @@ function refreshMazeMeshes(px,pz){
   const needed = new Set();
   const pitCache = new Map();
   
-  // First pass: collect all pits and check adjacency
   for(let dx=-VIEW_RADIUS; dx<=VIEW_RADIUS; dx++){
     for(let dz=-VIEW_RADIUS; dz<=VIEW_RADIUS; dz++){
       const cx=pcx+dx, cz=pcz+dz;
@@ -590,11 +574,9 @@ function refreshMazeMeshes(px,pz){
     }
   }
   
-  // Check which pit walls to skip (adjacent pits)
   const skipWall = new Set();
   for(const [key, pos] of pitCache) {
     const {cx, cz} = pos;
-    // Check 4 neighbors
     const neighbors = [
       [cx, cz-1, 'N'],
       [cx, cz+1, 'S'],
@@ -608,7 +590,6 @@ function refreshMazeMeshes(px,pz){
     }
   }
 
-  // Second pass: create meshes
   for(let dx=-VIEW_RADIUS; dx<=VIEW_RADIUS; dx++){
     for(let dz=-VIEW_RADIUS; dz<=VIEW_RADIUS; dz++){
       const cx=pcx+dx, cz=pcz+dz;
@@ -649,7 +630,6 @@ function refreshMazeMeshes(px,pz){
         const pitKey = key+'#pit';
         needed.add(pitKey);
         if(!meshPool.has(pitKey)){
-          // Bottom floor
           const floor = new THREE.Mesh(pitFloorGeo, pitFloorMat);
           floor.rotation.x = -Math.PI/2;
           floor.position.set(wx, -PIT_DEPTH + 0.1, wz);
@@ -659,8 +639,6 @@ function refreshMazeMeshes(px,pz){
           const halfCell = CELL * 0.46;
           const wallHeight = PIT_DEPTH;
           
-          // 4 walls using PlaneGeometry (no gaps!)
-          // North wall
           if(!skipWall.has(key + '_N')) {
             const wallN = new THREE.Mesh(pitWallPlaneGeo, pitWallMat);
             wallN.position.set(wx, -wallHeight/2, wz - halfCell);
@@ -669,7 +647,6 @@ function refreshMazeMeshes(px,pz){
             meshPool.set(pitKey+'_wallN', wallN);
           }
           
-          // South wall
           if(!skipWall.has(key + '_S')) {
             const wallS = new THREE.Mesh(pitWallPlaneGeo, pitWallMat);
             wallS.position.set(wx, -wallHeight/2, wz + halfCell);
@@ -678,7 +655,6 @@ function refreshMazeMeshes(px,pz){
             meshPool.set(pitKey+'_wallS', wallS);
           }
           
-          // East wall
           if(!skipWall.has(key + '_E')) {
             const wallE = new THREE.Mesh(pitWallPlaneGeo, pitWallMat);
             wallE.position.set(wx + halfCell, -wallHeight/2, wz);
@@ -687,7 +663,6 @@ function refreshMazeMeshes(px,pz){
             meshPool.set(pitKey+'_wallE', wallE);
           }
           
-          // West wall
           if(!skipWall.has(key + '_W')) {
             const wallW = new THREE.Mesh(pitWallPlaneGeo, pitWallMat);
             wallW.position.set(wx - halfCell, -wallHeight/2, wz);
@@ -702,19 +677,12 @@ function refreshMazeMeshes(px,pz){
     }
   }
   
-  // Cleanup
   for(const [key,mesh] of meshPool){
     if(!needed.has(key) && !key.includes('#pit')){
       scene.remove(mesh);
       if(mesh.geometry!==sharedBoxGeo && mesh.geometry!==slitBoxGeo && mesh.geometry!==floorTileGeo && mesh.geometry!==pitWallPlaneGeo && mesh.geometry!==pitFloorGeo) mesh.geometry.dispose();
       meshPool.delete(key);
     }
-  }
-  
-  // Performance logging
-  const elapsed = performance.now() - startTime;
-  if (elapsed > 5) {
-    console.log(`[Perf] refreshMazeMeshes: ${elapsed.toFixed(2)}ms`);
   }
 }
 
@@ -975,62 +943,40 @@ let choiceActive = false;
 let choiceDeadline = 0;
 let upgradesCollected = 0;
 
-function offerUpgrades(){
-  state = 'choosing';
-  timeScale = 0.05;
-  setBotAudioSlow(true);
-  choiceActive = true;
-  choiceDeadline = performance.now() + CHOICE_TIME_MS;
+// ============================================================
+// MUTABLE TUNING (declared early)
+// ============================================================
+let baseSpeedCur   = BASE_SPEED;
+let gravityCur     = GRAVITY;
+let yawRateCur     = YAW_RATE;
+let jumpBoostCur   = COMBO_BASE;
+let slideBoostCur  = COMBO_BASE;
+let slideFrictionCur = 0.5;
+let dmgResistMult  = 1.0;
+let healBonusCur   = 0;
+let timeScale      = 1;
 
-  const pool = UPGRADES.slice();
-  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
-  const picks = pool.slice(0,3);
-  currentChoicePicks = picks;
-  const wrap = document.getElementById('upgradeOptions');
-  wrap.innerHTML = '';
-  picks.forEach((u, idx)=>{
-    const btn = document.createElement('button');
-    const stacks = upgradeStacks[u.id]||0;
-    btn.className = 'upgradeBtn';
-    btn.style.animationDelay = (idx * 0.15) + 's';
-    btn.innerHTML = `<div class="uLabel">${u.label}${stacks?` (x${stacks})`:''}</div><div class="uDesc">${u.desc}</div>`;
-    btn.addEventListener('click', ()=> finalizeChoice(u));
-    wrap.appendChild(btn);
-  });
-  document.getElementById('powerupScreen').style.display = 'flex';
-  
-  if(document.pointerLockElement) {
-    document.exitPointerLock();
-  }
-}
-
-function finalizeChoice(u){
-  if(!choiceActive) return;
-  choiceActive = false;
-  u.apply();
-  upgradeStacks[u.id] = (upgradeStacks[u.id]||0)+1;
-  upgradesCollected++;
-  document.getElementById('powerupScreen').style.display = 'none';
-  timeScale = 1;
-  setBotAudioSlow(false);
-  state = 'playing';
-  showToast('✦ ' + u.label + ' ✦');
-  
-  if(pointerLocked) {
-    canvas.requestPointerLock();
-  }
-}
-
-function showToast(text){
-  const t = document.getElementById('toast');
-  t.textContent = text;
-  t.style.display = 'block';
-  requestAnimationFrame(()=>{ t.style.opacity = '1'; });
-  setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>{ t.style.display='none'; }, 300); }, 1500);
-}
-function setBotAudioSlow(isSlow){
-  botRuntimes.forEach(r=>{ if(r.audioEl){ r.audioEl.playbackRate = isSlow ? 0.35 : 1; } });
-}
+// ============================================================
+// GAME STATE (declared early)
+// ============================================================
+let state = 'idle';
+let px=0, pz=0, yaw=0;
+let playerY=0, vy=0, onGround=true;
+let sliding=false, slideSpeed=0;
+let wallrunning=false;
+let speedBonus=0, lastActionTime=-999;
+let elapsed=0;
+let camRoll=0, displayFov=BASE_FOV;
+let health = HEALTH_MAX;
+let hitCooldown = 0;
+let bobPhase = 0;
+let pitGraceTimer = 0;
+let healFlash = 0;
+let deathSeq = 0;
+let pointerLocked = false;
+let killedBy = 'Unknown';
+let lastCellX = 0, lastCellZ = 0;
+let mazeUpdateCounter = 0;
 
 // ============================================================
 // HIGH SCORES
@@ -1095,16 +1041,14 @@ function submitHighScore(time, distance, killedBy) {
 }
 
 function checkIfHighScore(time, distance) {
-  if (!highScoresCache) return true; // If we can't check, assume yes
+  if (!highScoresCache) return true;
   const topTimes = highScoresCache.topTimes || [];
   const topDistances = highScoresCache.topDistances || [];
   
-  // Check if time beats the 10th place time
   if (topTimes.length < 10) return true;
   const minTime = topTimes[topTimes.length - 1]?.time || 0;
   if (time > minTime) return true;
   
-  // Check if distance beats the 10th place distance
   if (topDistances.length < 10) return true;
   const minDist = topDistances[topDistances.length - 1]?.distance || 0;
   if (distance > minDist) return true;
@@ -1159,67 +1103,42 @@ function showComic() {
   
   screen.style.display = 'flex';
   
-  // Reset state
   img.className = '';
   skipBtn.classList.remove('visible');
   img.style.transform = 'translateX(0%)';
   
-  // Fade in
   requestAnimationFrame(() => {
     img.classList.add('visible');
   });
   
-  // Start scrolling after 1.5s
   setTimeout(() => {
     img.classList.add('scrolling');
   }, 1500);
   
-  // Show skip button after 3s (when scrolling is mostly done)
   setTimeout(() => {
     skipBtn.classList.add('visible');
   }, 3000);
   
-  // Click anywhere shows skip button if not visible
   const showSkip = () => {
     skipBtn.classList.add('visible');
   };
   screen.addEventListener('click', showSkip);
   
-  // Skip button
   skipBtn.addEventListener('click', () => {
     screen.style.display = 'none';
     document.getElementById('startScreen').style.display = 'flex';
     screen.removeEventListener('click', showSkip);
   });
   
-  // Also skip if image fails to load
   img.addEventListener('error', () => {
+    img.style.display = 'none';
     skipBtn.classList.add('visible');
   });
 }
 
 // ============================================================
-// GAME STATE
+// GAME FUNCTIONS
 // ============================================================
-let state = 'idle';
-let px=0, pz=0, yaw=0;
-let playerY=0, vy=0, onGround=true;
-let sliding=false, slideSpeed=0;
-let wallrunning=false;
-let speedBonus=0, lastActionTime=-999;
-let elapsed=0;
-let camRoll=0, displayFov=BASE_FOV;
-let health = HEALTH_MAX;
-let hitCooldown = 0;
-let bobPhase = 0;
-let pitGraceTimer = 0;
-let healFlash = 0;
-let deathSeq = 0;
-let pointerLocked = false;
-let killedBy = 'Unknown';
-let lastCellX = 0, lastCellZ = 0;
-let mazeUpdateCounter = 0;
-
 function currentSpeed(){ return baseSpeedCur + speedBonus; }
 function spawnIntervalCur(){ return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_BASE - elapsed*0.06); }
 function botSpeedCur(){ return Math.max(14.7, currentSpeed() * 1.0); }
@@ -1230,7 +1149,6 @@ function resetGame(){
   const startTime = performance.now();
   clearBots(); clearPickups();
   
-  // Clean up meshes more efficiently
   const toRemove = [];
   for(const [key,mesh] of meshPool){
     if(key !== '') {
@@ -1273,11 +1191,6 @@ function resetGame(){
   document.getElementById('gameOverScreen').style.display = 'none';
   document.getElementById('powerupScreen').style.display = 'none';
   document.getElementById('toast').style.display = 'none';
-  
-  const elapsed = performance.now() - startTime;
-  if (elapsed > 10) {
-    console.log(`[Perf] resetGame: ${elapsed.toFixed(2)}ms`);
-  }
 }
 
 function registerAction(kind){
@@ -1313,7 +1226,8 @@ let isMobile = false;
 
 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
   isMobile = true;
-  document.getElementById('lockHint').style.display = 'none';
+  const hint = document.getElementById('lockHint');
+  if (hint) hint.style.display = 'none';
 }
 
 function pointerStart(x,y){ pointerDown=true; startX=x; lastPX=x; lastPY=y; vTrackY=y; vTrackTime=performance.now(); turnInput=0; }
@@ -1379,7 +1293,7 @@ window.addEventListener('keyup', e=>{
 });
 
 // ============================================================
-// MINIMAP - optimized
+// MINIMAP
 // ============================================================
 const miniCanvas = document.getElementById('minimap');
 const miniCtx = miniCanvas.getContext('2d');
@@ -1387,7 +1301,6 @@ let lastMinimapUpdate = 0;
 
 function drawMinimap(){
   const now = performance.now();
-  // Only update minimap every 100ms
   if (now - lastMinimapUpdate < 100) return;
   lastMinimapUpdate = now;
   
@@ -1441,6 +1354,7 @@ function drawMinimap(){
 // MAIN LOOP
 // ============================================================
 let lastT = performance.now();
+
 function tick(){
   requestAnimationFrame(tick);
   const now = performance.now();
@@ -1453,16 +1367,6 @@ function tick(){
   const dt = rawDt * (state==='choosing' ? timeScale : 1);
   if(state==='playing' || state==='choosing') update(dt);
   render();
-  
-  // Performance logging every 5 seconds
-  perfCounter += rawDt;
-  if (perfCounter - lastPerfLog > 5) {
-    lastPerfLog = perfCounter;
-    const frameTime = rawDt * 1000;
-    if (frameTime > 20) {
-      console.log(`[Perf] Frame time: ${frameTime.toFixed(2)}ms (${(1000/frameTime).toFixed(0)} FPS)`);
-    }
-  }
 }
 
 function updateChoiceUI(now){
@@ -1497,6 +1401,64 @@ function updateChoiceUI(now){
   }
 }
 
+function offerUpgrades(){
+  state = 'choosing';
+  timeScale = 0.05;
+  setBotAudioSlow(true);
+  choiceActive = true;
+  choiceDeadline = performance.now() + CHOICE_TIME_MS;
+
+  const pool = UPGRADES.slice();
+  for(let i=pool.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [pool[i],pool[j]]=[pool[j],pool[i]]; }
+  const picks = pool.slice(0,3);
+  currentChoicePicks = picks;
+  const wrap = document.getElementById('upgradeOptions');
+  wrap.innerHTML = '';
+  picks.forEach((u, idx)=>{
+    const btn = document.createElement('button');
+    const stacks = upgradeStacks[u.id]||0;
+    btn.className = 'upgradeBtn';
+    btn.style.animationDelay = (idx * 0.15) + 's';
+    btn.innerHTML = `<div class="uLabel">${u.label}${stacks?` (x${stacks})`:''}</div><div class="uDesc">${u.desc}</div>`;
+    btn.addEventListener('click', ()=> finalizeChoice(u));
+    wrap.appendChild(btn);
+  });
+  document.getElementById('powerupScreen').style.display = 'flex';
+  
+  if(document.pointerLockElement) {
+    document.exitPointerLock();
+  }
+}
+
+function finalizeChoice(u){
+  if(!choiceActive) return;
+  choiceActive = false;
+  u.apply();
+  upgradeStacks[u.id] = (upgradeStacks[u.id]||0)+1;
+  upgradesCollected++;
+  document.getElementById('powerupScreen').style.display = 'none';
+  timeScale = 1;
+  setBotAudioSlow(false);
+  state = 'playing';
+  showToast('✦ ' + u.label + ' ✦');
+  
+  if(pointerLocked) {
+    canvas.requestPointerLock();
+  }
+}
+
+function showToast(text){
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.style.display = 'block';
+  requestAnimationFrame(()=>{ t.style.opacity = '1'; });
+  setTimeout(()=>{ t.style.opacity='0'; setTimeout(()=>{ t.style.display='none'; }, 300); }, 1500);
+}
+
+function setBotAudioSlow(isSlow){
+  botRuntimes.forEach(r=>{ if(r.audioEl){ r.audioEl.playbackRate = isSlow ? 0.35 : 1; } });
+}
+
 function hitPlayer(runtime){
   if(state!=='playing' || hitCooldown>0) return;
   hitCooldown = HIT_COOLDOWN;
@@ -1517,7 +1479,6 @@ function hitPlayer(runtime){
 }
 
 function update(dt){
-  const updateStart = performance.now();
   elapsed += dt;
   if(hitCooldown>0) hitCooldown -= dt;
   speedBonus = Math.max(0, speedBonus - SPEED_DECAY*dt);
@@ -1587,7 +1548,6 @@ function update(dt){
     } else { pitGraceTimer = 0; }
   } else { pitGraceTimer = 0; }
 
-  // Only refresh maze when player moves to a new cell
   const [newCX, newCZ] = worldToCell(px,pz);
   if (newCX !== lastCellX || newCZ !== lastCellZ) {
     lastCellX = newCX;
@@ -1677,16 +1637,9 @@ function update(dt){
   if(botCountDisplay) {
     botCountDisplay.textContent = 'Bots: ' + activeInstances.length + '/' + expectedBotCountCur();
   }
-  
-  // Performance monitoring
-  const updateTime = performance.now() - updateStart;
-  if (updateTime > 5) {
-    console.log(`[Perf] update: ${updateTime.toFixed(2)}ms`);
-  }
 }
 
 function render(){
-  const renderStart = performance.now();
   let eyeY = EYE_HEIGHT + playerY;
   if(sliding) eyeY = SLIDE_HEIGHT + playerY;
   let bobX = 0;
@@ -1732,11 +1685,6 @@ function render(){
   renderer.setScissorTest(false);
 
   drawMinimap();
-  
-  const renderTime = performance.now() - renderStart;
-  if (renderTime > 8) {
-    console.log(`[Perf] render: ${renderTime.toFixed(2)}ms`);
-  }
 }
 
 function dieByBot(runtime, message){
@@ -1784,27 +1732,22 @@ function dieByBot(runtime, message){
     document.getElementById('finalKiller').textContent = 'Killed by: ' + killedBy;
     document.getElementById('finalUpgrades').textContent = 'Upgrades collected: ' + upgradesCollected;
     
-    // Check if this is a high score
     getHighScores().then(scores => {
       renderHighScores(scores);
       const isHighScore = checkIfHighScore(finalTime, finalDist);
       
       if (isHighScore && playerUsername) {
-        // Already have username, submit directly
         submitHighScore(finalTime, finalDist, killedBy);
+        document.getElementById('gameOverScreen').style.display = 'flex';
       } else if (isHighScore && !playerUsername) {
-        // Show username prompt
         document.getElementById('gameOverScreen').style.display = 'none';
         document.getElementById('usernamePrompt').style.display = 'flex';
         document.getElementById('usernameInput').focus();
-        // Store the score to submit later
         window._pendingScore = { time: finalTime, distance: finalDist, killedBy: killedBy };
       } else {
-        // Not a high score, just show game over
         document.getElementById('gameOverScreen').style.display = 'flex';
       }
     }).catch(() => {
-      // If high score fetch fails, just show game over
       document.getElementById('gameOverScreen').style.display = 'flex';
     });
     
@@ -1821,7 +1764,6 @@ document.getElementById('usernameConfirm').addEventListener('click', ()=>{
     setUsername(name);
     document.getElementById('usernamePrompt').style.display = 'none';
     
-    // Submit pending score if exists
     if (window._pendingScore) {
       submitHighScore(
         window._pendingScore.time,
@@ -1848,7 +1790,6 @@ document.getElementById('usernameInput').addEventListener('keydown', (e)=>{
 
 document.getElementById('startBtn').addEventListener('click', ()=>{
   const username = getUsername();
-  // Pre-fetch high scores
   getHighScores();
   document.getElementById('startScreen').style.display = 'none';
   startGame();
@@ -1868,7 +1809,7 @@ document.getElementById('retryBtn').addEventListener('click', ()=>{
 });
 
 // ============================================================
-// AUDIO CONTEXT (placeholder)
+// AUDIO CONTEXT
 // ============================================================
 let audioCtx;
 try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
@@ -1887,7 +1828,8 @@ function distortionCurve(amount){
 // ============================================================
 // INITIALIZATION
 // ============================================================
-resetGame();
+// Ensure start screen is visible initially
+document.getElementById('startScreen').style.display = 'flex';
 
 // Show comic on first load
 if (!comicShown) {
@@ -1898,7 +1840,10 @@ if (!comicShown) {
   }, 300);
 }
 
+// Start the loop
+resetGame();
 requestAnimationFrame(tick);
+
 })();
 </script>
 </body>
