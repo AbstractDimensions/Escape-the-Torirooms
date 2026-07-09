@@ -103,9 +103,13 @@
   #comicSkip.visible { opacity:1; pointer-events:auto; }
   #comicSkip:hover { background:#e8dfa8; color:#111; }
 
-  h1 { font-size:26px; letter-spacing:3px; margin-bottom:6px; text-transform:uppercase; }
+  h1 { font-size:26px; letter-spacing:3px; margin-bottom:6px; text-transform:uppercase; position:relative; }
   h1 img { max-width:80%; max-height:200px; object-fit:contain; display:block; margin:0 auto; }
   .title-placeholder { font-size:32px; letter-spacing:4px; color:#e8dfa8; }
+  .version-tag {
+    position:absolute; bottom:-20px; right:0; font-size:10px; opacity:0.4;
+    letter-spacing:1px;
+  }
   p.sub { opacity:0.65; font-size:13px; max-width:320px; line-height:1.6; margin: 6px 0 22px; }
   button {
     font-family:'Courier New', monospace; background:none; border:1px solid #e8dfa8; color:#e8dfa8;
@@ -181,10 +185,22 @@
   .score-entry .rank { opacity:0.5; width:20px; }
   .score-entry .name { flex:1; padding-left:8px; }
   .score-entry .value { opacity:0.8; }
+
+  #loadingLog {
+    position:fixed; bottom:10px; left:10px; 
+    font-family:'Courier New',monospace; font-size:9px; 
+    color:rgba(232,223,168,0.3); z-index:100;
+    max-height:100px; overflow-y:auto; pointer-events:none;
+    text-align:left; line-height:1.4;
+    max-width:300px;
+  }
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+
+<!-- Loading Log -->
+<div id="loadingLog"></div>
 
 <!-- HUD -->
 <div id="hud">
@@ -211,13 +227,16 @@
 
 <!-- Comic Screen -->
 <div id="comicScreen">
-  <img id="comicImage" src="assets/comic-strip.jpg" alt="Comic" style="display:block;" onerror="this.style.display='none'; document.getElementById('comicSkip').classList.add('visible');">
+  <img id="comicImage" src="assets/comic-strip.jpg" alt="Comic" style="display:block;" onerror="this.style.display='none'; document.getElementById('comicSkip').classList.add('visible'); logEvent('Comic image failed to load');">
   <button id="comicSkip">Skip</button>
 </div>
 
 <!-- Start Screen -->
 <div id="startScreen">
-  <h1><img src="assets/title-image.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span>';"></h1>
+  <h1>
+    <img src="assets/title-image.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.1</span>';">
+    <span class="version-tag">v1.0.1</span>
+  </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
   Slide through low wall-slits. Grab green pellets to heal, blue ones for upgrades.<br>
@@ -260,6 +279,26 @@
 <script>
 (function(){
 "use strict";
+
+// ============================================================
+// VERSION
+// ============================================================
+const VERSION = 'v1.0.1';
+
+// ============================================================
+// LOGGING
+// ============================================================
+const logContainer = document.getElementById('loadingLog');
+function logEvent(msg) {
+  const time = new Date().toLocaleTimeString();
+  const entry = `[${time}] ${msg}`;
+  console.log(entry);
+  if (logContainer) {
+    logContainer.innerHTML += entry + '\n';
+    logContainer.scrollTop = logContainer.scrollHeight;
+  }
+}
+logEvent('Game starting v' + VERSION);
 
 // ============================================================
 // CONFIGURATION
@@ -417,7 +456,8 @@ const ceilMat  = new THREE.MeshStandardMaterial({map:ceilTex, roughness:0.9, sid
 const pitWallMat = new THREE.MeshBasicMaterial({map:pitWallTex, side:THREE.DoubleSide});
 const pitFloorMat = new THREE.MeshBasicMaterial({map:pitFloorTex, side:THREE.DoubleSide});
 
-const pitWallPlaneGeo = new THREE.PlaneGeometry(CELL * 0.92, PIT_DEPTH);
+// FIXED: Use exact cell dimensions for pit walls (no gaps!)
+const pitWallPlaneGeo = new THREE.PlaneGeometry(CELL, PIT_DEPTH);
 const pitFloorGeo = new THREE.PlaneGeometry(CELL * 0.8, CELL * 0.8);
 
 const bigCeil = new THREE.Mesh(new THREE.PlaneGeometry(2000,2000), ceilMat);
@@ -522,19 +562,27 @@ function getCell(cx0,cz0){
       type = OPEN;
     }
   } else if(inRoomX !== inRoomZ) {
+    // FIXED: Corridors - shorter, single obstacle
     const isHorizontal = !inRoomX;
     const dirTag = isHorizontal ? 1 : 2;
-    const corridorLength = getCorridorLength(rx, rz, dirTag, mazeSeed);
+    // Shorter corridors: 1-2 cells
+    const corridorLength = 1 + Math.floor(hash2(rx*13 + dirTag*7, rz*13 + dirTag*7, mazeSeed + 999) * 2);
     const offset = isHorizontal ? localX : localZ;
     
     if(offset >= 0 && offset < corridorLength) {
-      const r = hash2(rx*7 + dirTag*3, rz*7 + dirTag*3, mazeSeed + dirTag*131);
-      if(r < 0.50) {
-        type = OPEN;
-      } else if(r < 0.83) {
-        type = WALL_SLIT;
+      // Only one obstacle per corridor - check if we're at the middle
+      const mid = Math.floor(corridorLength / 2);
+      if (offset === mid) {
+        const r = hash2(rx*7 + dirTag*3, rz*7 + dirTag*3, mazeSeed + dirTag*131);
+        if(r < 0.50) {
+          type = OPEN;
+        } else if(r < 0.83) {
+          type = WALL_SLIT;
+        } else {
+          type = PIT;
+        }
       } else {
-        type = PIT;
+        type = OPEN;
       }
     } else {
       type = OPEN;
@@ -559,7 +607,7 @@ function isBlockedForBot(x,z){
 }
 
 function refreshMazeMeshes(px,pz){
-  const startTime = performance.now();
+  logEvent('Refreshing maze at (' + px.toFixed(1) + ', ' + pz.toFixed(1) + ')');
   const [pcx,pcz] = worldToCell(px,pz);
   const needed = new Set();
   const pitCache = new Map();
@@ -636,7 +684,8 @@ function refreshMazeMeshes(px,pz){
           scene.add(floor);
           meshPool.set(pitKey+'_floor', floor);
           
-          const halfCell = CELL * 0.46;
+          // FIXED: Use exact cell edges - no offset needed
+          const halfCell = CELL / 2;
           const wallHeight = PIT_DEPTH;
           
           if(!skipWall.has(key + '_N')) {
@@ -767,8 +816,42 @@ function buildBotRuntime(bot){
     audioEl:null,
     gainNode:null,
     shaperNode:null,
-    instance:null 
+    instance:null,
+    imageLoaded: false
   };
+  
+  // Try to load image with multiple extensions
+  const extensions = ['jpg', 'jpeg', 'png', 'webp'];
+  const basePath = 'assets/nextbots/' + bot.id + '/images/' + bot.id;
+  
+  let extIndex = 0;
+  function tryLoadImage() {
+    if (extIndex >= extensions.length) {
+      logEvent('⚠️ No image found for ' + bot.id);
+      return;
+    }
+    const path = basePath + '.' + extensions[extIndex];
+    logEvent('📷 Loading image: ' + path);
+    
+    const img = new Image();
+    img.onload = function() {
+      runtime.imgEl = img;
+      runtime.imageLoaded = true;
+      logEvent('✅ Image loaded: ' + path);
+      if (runtime.instance) {
+        runtime.instance.sprite.material.map = new THREE.Texture(img);
+        runtime.instance.sprite.material.needsUpdate = true;
+      }
+    };
+    img.onerror = function() {
+      logEvent('❌ Image failed: ' + path);
+      extIndex++;
+      tryLoadImage();
+    };
+    img.src = path;
+  }
+  tryLoadImage();
+  
   return runtime;
 }
 
@@ -801,7 +884,16 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   }
   
   const [sx,sz] = findOpenSpawnPoint(px,pz, minDist, maxDist, preferDirection);
-  const mat = new THREE.SpriteMaterial({map: runtime.loadedImageTex || runtime.placeholderTex});
+  
+  // Use loaded image or placeholder
+  let texture;
+  if (runtime.imgEl) {
+    texture = new THREE.Texture(runtime.imgEl);
+  } else {
+    texture = runtime.placeholderTex;
+  }
+  
+  const mat = new THREE.SpriteMaterial({map: texture});
   const sprite = new THREE.Sprite(mat);
   sprite.scale.set(1.8,1.8,1.8);
   sprite.position.set(sx, 1.1, sz);
@@ -809,6 +901,7 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   const instance = { runtime, sprite, x:sx, z:sz };
   runtime.instance = instance;
   activeInstances.push(instance);
+  logEvent('👾 Spawned ' + runtime.def.name + ' at (' + sx.toFixed(1) + ', ' + sz.toFixed(1) + ')');
 }
 
 function clearBots(){
@@ -944,7 +1037,7 @@ let choiceDeadline = 0;
 let upgradesCollected = 0;
 
 // ============================================================
-// MUTABLE TUNING (declared early)
+// MUTABLE TUNING
 // ============================================================
 let baseSpeedCur   = BASE_SPEED;
 let gravityCur     = GRAVITY;
@@ -957,7 +1050,7 @@ let healBonusCur   = 0;
 let timeScale      = 1;
 
 // ============================================================
-// GAME STATE (declared early)
+// GAME STATE
 // ============================================================
 let state = 'idle';
 let px=0, pz=0, yaw=0;
@@ -1011,7 +1104,7 @@ function getHighScores() {
       return data.data;
     })
     .catch(err => {
-      console.error('Failed to get high scores:', err);
+      logEvent('❌ Failed to get high scores: ' + err.message);
       return { topTimes: [], topDistances: [] };
     });
 }
@@ -1033,10 +1126,10 @@ function submitHighScore(time, distance, killedBy) {
   return fetch(url)
     .then(r => r.json())
     .then(data => {
-      console.log('High score submitted:', data);
+      logEvent('✅ High score submitted for ' + playerUsername);
     })
     .catch(err => {
-      console.error('Failed to submit high score:', err);
+      logEvent('❌ Failed to submit high score: ' + err.message);
     });
 }
 
@@ -1092,6 +1185,136 @@ function renderHighScores(scores) {
 }
 
 // ============================================================
+// AUDIO SYSTEM
+// ============================================================
+let audioCtx = null;
+let ambienceGain = null;
+let ambienceSource = null;
+let menuGain = null;
+let menuSource = null;
+let botGainNodes = new Map();
+
+function initAudio() {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    logEvent('🎵 Audio context initialized');
+    return true;
+  } catch(e) {
+    logEvent('❌ Audio context failed: ' + e.message);
+    return false;
+  }
+}
+
+function loadAudioFile(path, callback) {
+  if (!audioCtx) return;
+  
+  const extensions = ['mp3', 'ogg', 'wav'];
+  let extIndex = 0;
+  
+  function tryNext() {
+    if (extIndex >= extensions.length) {
+      logEvent('❌ No audio found at ' + path);
+      if (callback) callback(null);
+      return;
+    }
+    const fullPath = path + '.' + extensions[extIndex];
+    logEvent('🎵 Loading audio: ' + fullPath);
+    
+    fetch(fullPath)
+      .then(response => {
+        if (!response.ok) throw new Error('Not found');
+        return response.arrayBuffer();
+      })
+      .then(buffer => audioCtx.decodeAudioData(buffer))
+      .then(decoded => {
+        logEvent('✅ Audio loaded: ' + fullPath);
+        if (callback) callback(decoded);
+      })
+      .catch(() => {
+        extIndex++;
+        tryNext();
+      });
+  }
+  tryNext();
+}
+
+function playAmbience() {
+  if (!audioCtx) {
+    initAudio();
+    if (!audioCtx) return;
+  }
+  
+  loadAudioFile('assets/ambience/backrooms_ambience', (buffer) => {
+    if (!buffer) return;
+    
+    if (ambienceSource) {
+      ambienceSource.stop();
+      ambienceSource = null;
+    }
+    
+    ambienceGain = audioCtx.createGain();
+    ambienceGain.gain.value = 0.3;
+    ambienceGain.connect(audioCtx.destination);
+    
+    ambienceSource = audioCtx.createBufferSource();
+    ambienceSource.buffer = buffer;
+    ambienceSource.loop = true;
+    ambienceSource.connect(ambienceGain);
+    ambienceSource.start();
+    logEvent('🎵 Ambience playing');
+  });
+}
+
+function stopAmbience() {
+  if (ambienceSource) {
+    ambienceSource.stop();
+    ambienceSource = null;
+  }
+}
+
+function playMenuMusic() {
+  if (!audioCtx) return;
+  // TODO: Implement menu music loading
+}
+
+function playBotSound(botId, isJumpscare) {
+  if (!audioCtx) return;
+  
+  const basePath = 'assets/nextbots/' + botId + '/sounds/' + botId;
+  loadAudioFile(basePath, (buffer) => {
+    if (!buffer) return;
+    
+    const gain = audioCtx.createGain();
+    const shaper = audioCtx.createWaveShaper();
+    
+    if (isJumpscare) {
+      gain.gain.value = 1.0;
+      shaper.curve = distortionCurve(380);
+    } else {
+      gain.gain.value = 0.3;
+      shaper.curve = distortionCurve(0);
+    }
+    
+    const source = audioCtx.createBufferSource();
+    source.buffer = buffer;
+    source.connect(shaper);
+    shaper.connect(gain);
+    gain.connect(audioCtx.destination);
+    source.start();
+    
+    if (isJumpscare) {
+      logEvent('🔊 Jumpscare sound for ' + botId);
+    } else {
+      logEvent('🔊 Attack sound for ' + botId);
+    }
+  });
+}
+
+function playBotMusic(botId, distance) {
+  // TODO: Implement distance-based music
+}
+
+// ============================================================
 // COMIC SCREEN
 // ============================================================
 let comicShown = false;
@@ -1101,6 +1324,7 @@ function showComic() {
   const img = document.getElementById('comicImage');
   const skipBtn = document.getElementById('comicSkip');
   
+  logEvent('📖 Showing comic');
   screen.style.display = 'flex';
   
   img.className = '';
@@ -1125,12 +1349,16 @@ function showComic() {
   screen.addEventListener('click', showSkip);
   
   skipBtn.addEventListener('click', () => {
+    logEvent('📖 Comic skipped');
     screen.style.display = 'none';
     document.getElementById('startScreen').style.display = 'flex';
     screen.removeEventListener('click', showSkip);
+    // Start menu music
+    playMenuMusic();
   });
   
   img.addEventListener('error', () => {
+    logEvent('⚠️ Comic image not found - showing skip button');
     img.style.display = 'none';
     skipBtn.classList.add('visible');
   });
@@ -1146,7 +1374,6 @@ function hitDamageCur(){ return Math.min(HIT_DAMAGE*2.0, HIT_DAMAGE + elapsed*0.
 function expectedBotCountCur(){ return Math.floor(EXPECTED_BOT_COUNT_BASE + elapsed / 15 * EXPECTED_BOT_COUNT_GROWTH); }
 
 function resetGame(){
-  const startTime = performance.now();
   clearBots(); clearPickups();
   
   const toRemove = [];
@@ -1191,6 +1418,9 @@ function resetGame(){
   document.getElementById('gameOverScreen').style.display = 'none';
   document.getElementById('powerupScreen').style.display = 'none';
   document.getElementById('toast').style.display = 'none';
+  
+  // Start ambience when game starts
+  playAmbience();
 }
 
 function registerAction(kind){
@@ -1228,6 +1458,7 @@ if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
   isMobile = true;
   const hint = document.getElementById('lockHint');
   if (hint) hint.style.display = 'none';
+  logEvent('📱 Mobile mode detected');
 }
 
 function pointerStart(x,y){ pointerDown=true; startX=x; lastPX=x; lastPY=y; vTrackY=y; vTrackTime=performance.now(); turnInput=0; }
@@ -1464,6 +1695,10 @@ function hitPlayer(runtime){
   hitCooldown = HIT_COOLDOWN;
   const dmg = hitDamageCur() * dmgResistMult;
   health -= dmg;
+  
+  // Play attack sound
+  playBotSound(runtime.def.id, false);
+  
   const js = document.getElementById('jumpscare');
   js.className = 'fallback';
   js.style.backgroundImage = 'none';
@@ -1694,6 +1929,8 @@ function dieByBot(runtime, message){
 
   if (runtime) {
     killedBy = runtime.def.name;
+    // Play jumpscare sound
+    playBotSound(runtime.def.id, true);
   } else if (message) {
     killedBy = 'Pit';
   }
@@ -1713,6 +1950,7 @@ function dieByBot(runtime, message){
     document.exitPointerLock();
   }
 
+  // FIXED: Much shorter delay - jumpscare is instant
   setTimeout(()=>{
     if(deathSeq !== mySeq) return;
     js.style.display = 'none';
@@ -1731,6 +1969,9 @@ function dieByBot(runtime, message){
     document.getElementById('finalDist').textContent = finalDist+'m';
     document.getElementById('finalKiller').textContent = 'Killed by: ' + killedBy;
     document.getElementById('finalUpgrades').textContent = 'Upgrades collected: ' + upgradesCollected;
+    
+    // Stop ambience on death
+    stopAmbience();
     
     getHighScores().then(scores => {
       renderHighScores(scores);
@@ -1751,7 +1992,7 @@ function dieByBot(runtime, message){
       document.getElementById('gameOverScreen').style.display = 'flex';
     });
     
-  }, message ? 300 : 900);
+  }, 300); // FIXED: Reduced from 900ms to 300ms - jumpscare is instant
 }
 
 // ============================================================
@@ -1792,28 +2033,34 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
   const username = getUsername();
   getHighScores();
   document.getElementById('startScreen').style.display = 'none';
+  // Initialize audio on user interaction
+  if (!audioCtx) {
+    initAudio();
+  }
   startGame();
 });
 
 function startGame() {
-  if (audioCtx && audioCtx.resume) audioCtx.resume();
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
   document.getElementById('usernamePrompt').style.display = 'none';
   resetGame();
   state = 'playing';
+  logEvent('🎮 Game started');
 }
 
 document.getElementById('retryBtn').addEventListener('click', ()=>{
   document.getElementById('gameOverScreen').style.display = 'none';
   resetGame();
   state = 'playing';
+  logEvent('🔄 Game restarted');
 });
 
 // ============================================================
 // AUDIO CONTEXT
 // ============================================================
-let audioCtx;
-try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
-catch(e){ audioCtx = null; }
+// Audio is initialized on user interaction
 
 function distortionCurve(amount){
   const k = amount, n = 4410;
@@ -1828,13 +2075,17 @@ function distortionCurve(amount){
 // ============================================================
 // INITIALIZATION
 // ============================================================
+logEvent('🚀 Initializing game v' + VERSION);
+
 // Ensure start screen is visible initially
 document.getElementById('startScreen').style.display = 'flex';
 
-// Show comic on first load
+// FIXED: Comic shows FIRST, before menu
 if (!comicShown) {
   comicShown = true;
-  // Wait a moment then show comic
+  // Hide start screen while comic shows
+  document.getElementById('startScreen').style.display = 'none';
+  logEvent('📖 Showing comic first');
   setTimeout(() => {
     showComic();
   }, 300);
@@ -1844,6 +2095,7 @@ if (!comicShown) {
 resetGame();
 requestAnimationFrame(tick);
 
+logEvent('✅ Game initialization complete');
 })();
 </script>
 </body>
