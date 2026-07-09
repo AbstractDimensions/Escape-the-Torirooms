@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Backrooms Runner</title>
+<title>Escape the Torirooms</title>
 <style>
   html, body { margin:0; padding:0; overflow:hidden; background:#000; height:100%; width:100%; touch-action:none; cursor:default; }
   #c { display:block; width:100vw; height:100vh; }
@@ -117,6 +117,19 @@
     position:absolute; top:calc(14vh + 40px); right:14px; 
     font-size:12px; opacity:0.6;
   }
+  #usernamePrompt {
+    position:fixed; inset:0; background:rgba(5,5,3,0.95); color:#e8dfa8;
+    display:none; flex-direction:column; align-items:center; justify-content:center;
+    font-family:'Courier New', monospace; text-align:center; padding:20px; z-index:30;
+    pointer-events:auto;
+  }
+  #usernamePrompt input {
+    background:rgba(255,255,255,0.1); border:1px solid #e8dfa8; color:#e8dfa8;
+    padding:12px 20px; font-size:18px; font-family:'Courier New', monospace;
+    margin:10px 0; width:200px; text-align:center;
+  }
+  #usernamePrompt input:focus { outline:2px solid #e8dfa8; }
+  #usernamePrompt button { margin-top:10px; }
 </style>
 </head>
 <body>
@@ -151,11 +164,20 @@
   <button id="startBtn">Begin</button>
 </div>
 
+<div id="usernamePrompt">
+  <h1>ENTER YOUR NAME</h1>
+  <p class="sub">This will be saved for the high score leaderboard</p>
+  <input type="text" id="usernameInput" maxlength="20" placeholder="Your name">
+  <button id="usernameConfirm">Confirm</button>
+</div>
+
 <div id="gameOverScreen">
   <h1 id="goTitle">CAUGHT</h1>
   <div class="stat">You survived</div>
   <div class="bigstat" id="finalTime">0.0s</div>
   <div class="stat" id="finalDist">0m traveled</div>
+  <div class="stat" id="finalKiller">Killed by: Unknown</div>
+  <div class="stat" id="finalUpgrades">Upgrades collected: 0</div>
   <button id="retryBtn" style="margin-top:18px;">Try Again</button>
 </div>
 
@@ -171,9 +193,9 @@
 (function(){
 "use strict";
 
-/* ============================================================
-   CONFIG
-   ============================================================ */
+// ============================================================
+// CONFIGURATION
+// ============================================================
 const CELL          = 6;
 const WALL_HEIGHT   = 5.6;
 const SLIT_GAP      = 1.2;
@@ -217,6 +239,9 @@ const EXPECTED_BOT_COUNT_BASE = 3;
 const EXPECTED_BOT_COUNT_GROWTH = 1;
 const BOT_RESPAWN_DELAY = 5;
 
+// HIGH SCORES API
+const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbw1TSJCYskcAjAhL2xENVnZU15jJ06YQ2d6PEJkgVVPGGbQ-crFsiWe0AVe_JeUgJ0iKQ/exec';
+
 /* mutable, upgrade-affected tuning */
 let baseSpeedCur   = BASE_SPEED;
 let gravityCur     = GRAVITY;
@@ -228,9 +253,9 @@ let dmgResistMult  = 1.0;
 let healBonusCur   = 0;
 let timeScale      = 1;
 
-/* ============================================================
-   THREE SETUP
-   ============================================================ */
+// ============================================================
+// THREE.JS SETUP
+// ============================================================
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({canvas, antialias:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
@@ -257,9 +282,9 @@ const headlamp = new THREE.PointLight(0xfff6d0, 1.1, 12, 2);
 camera.add(headlamp);
 scene.add(camera);
 
-/* ============================================================
-   TEXTURES
-   ============================================================ */
+// ============================================================
+// TEXTURES
+// ============================================================
 function makeCanvasTexture(draw, size=256){
   const cnv = document.createElement('canvas');
   cnv.width = cnv.height = size;
@@ -335,7 +360,6 @@ const ceilMat  = new THREE.MeshStandardMaterial({map:ceilTex, roughness:0.9, sid
 const pitWallMat = new THREE.MeshBasicMaterial({map:pitWallTex, side:THREE.DoubleSide});
 const pitFloorMat = new THREE.MeshBasicMaterial({map:pitFloorTex, side:THREE.DoubleSide});
 
-// FIXED: Define the geometries properly
 const pitWallGeo = new THREE.BoxGeometry(CELL * 0.92, PIT_DEPTH, 0.08);
 const pitFloorGeo = new THREE.PlaneGeometry(CELL * 0.8, CELL * 0.8);
 
@@ -344,9 +368,9 @@ bigCeil.rotation.x = Math.PI/2;
 bigCeil.position.y = WALL_HEIGHT;
 scene.add(bigCeil);
 
-/* ============================================================
-   RNG / noise helpers
-   ============================================================ */
+// ============================================================
+// RNG HELPERS
+// ============================================================
 function hash2(x,y,seed){
   let h = x*374761393 + y*668265263 + seed*2147483647;
   h = (h ^ (h>>>13))*1274126177;
@@ -365,9 +389,9 @@ function valueNoise(x,y,seed){
 function floorDiv(a,b){ return Math.floor(a/b); }
 function mod(a,b){ return ((a%b)+b)%b; }
 
-/* ============================================================
-   DUNGEON GENERATION
-   ============================================================ */
+// ============================================================
+// DUNGEON GENERATION
+// ============================================================
 const WALL=0, OPEN=1, PIT=2, WALL_SLIT=3;
 const MIN_ROOM_SIZE = 2;
 const MAX_ROOM_SIZE = 5;
@@ -435,6 +459,7 @@ function getCell(cx0,cz0){
       type = OPEN;
     }
   } else if(inRoomX !== inRoomZ) {
+    // Corridor: 50% open, 50% obstacle (slits twice as likely as pits)
     const isHorizontal = !inRoomX;
     const dirTag = isHorizontal ? 1 : 2;
     const corridorLength = getCorridorLength(rx, rz, dirTag, mazeSeed);
@@ -442,12 +467,12 @@ function getCell(cx0,cz0){
     
     if(offset >= 0 && offset < corridorLength) {
       const r = hash2(rx*7 + dirTag*3, rz*7 + dirTag*3, mazeSeed + dirTag*131);
-      if(r < 0.75) {
-        type = OPEN;
-      } else if(r < 0.87) {
-        type = WALL_SLIT;
+      if(r < 0.50) {
+        type = OPEN;  // 50% open
+      } else if(r < 0.83) {
+        type = WALL_SLIT;  // 33% slit (twice as likely as pit)
       } else {
-        type = PIT;
+        type = PIT;  // 17% pit
       }
     } else {
       type = OPEN;
@@ -468,7 +493,7 @@ function cellTypeAtWorld(x,z){ const [cx,cz]=worldToCell(x,z); return getCell(cx
 
 function isBlockedForBot(x,z){
   const t = cellTypeAtWorld(x,z);
-  return t === WALL || t === PIT;
+  return t === WALL || t === PIT || t === WALL_SLIT; // Bots can't go through slits either
 }
 
 function refreshMazeMeshes(px,pz){
@@ -521,29 +546,25 @@ function refreshMazeMeshes(px,pz){
           scene.add(floor);
           meshPool.set(pitKey+'_floor', floor);
           
-          // 4 walls
+          // 4 walls with correct offset
           const halfCell = CELL * 0.46;
           
-          // North wall
           const wallN = new THREE.Mesh(pitWallGeo, pitWallMat);
           wallN.position.set(wx, -PIT_DEPTH/2, wz - halfCell);
           scene.add(wallN);
           meshPool.set(pitKey+'_wallN', wallN);
           
-          // South wall
           const wallS = new THREE.Mesh(pitWallGeo, pitWallMat);
           wallS.position.set(wx, -PIT_DEPTH/2, wz + halfCell);
           scene.add(wallS);
           meshPool.set(pitKey+'_wallS', wallS);
           
-          // East wall
           const wallE = new THREE.Mesh(pitWallGeo, pitWallMat);
           wallE.position.set(wx + halfCell, -PIT_DEPTH/2, wz);
           wallE.rotation.y = Math.PI/2;
           scene.add(wallE);
           meshPool.set(pitKey+'_wallE', wallE);
           
-          // West wall
           const wallW = new THREE.Mesh(pitWallGeo, pitWallMat);
           wallW.position.set(wx - halfCell, -PIT_DEPTH/2, wz);
           wallW.rotation.y = Math.PI/2;
@@ -603,23 +624,22 @@ function findOpenSpawnPoint(fromX,fromZ,minDist,maxDist,preferDirection=null){
   return [fromX, fromZ+minDist];
 }
 
-/* ============================================================
-   NEXTBOT ROSTER
-   ============================================================ */
+// ============================================================
+// NEXTBOT ROSTER
+// ============================================================
 const NEXTBOTS = [
-  { id:'toriam',     name:'ToriAM',                        color:0xf2c14e, images:1, sounds:1 },
-  { id:'aidan',      name:'Aidan Senekal',                  color:0x7a2b2b, images:1, sounds:1 },
-  { id:'cayla',      name:'Cayla',                          color:0xd98fb3, images:1, sounds:1 },
-  { id:'eva',        name:'Eva',                            color:0x6b4c8a, images:1, sounds:1 },
-  { id:'evie',       name:"Evie",                           color:0xf0d9c4, images:1, sounds:1 },
-  { id:'jeanluther', name:'Jeanluther',                     color:0x3d5c3a, images:1, sounds:1 },
-  { id:'ruhan',      name:'Ruhan',                          color:0x555555, images:1, sounds:1 },
-  { id:'robert',     name:"Robert (Tori's Evil Boyfriend)", color:0xb5482a, images:1, sounds:1 },
-  { id:'zenikah',    name:'Zenikah',                        color:0x222222, images:1, sounds:1 },
-  { id:'louis',      name:'Louis',                          color:0x2e86ab, images:1, sounds:1 },
+  { id:'robert',     name:'Robert',                        color:0xb5482a },
+  { id:'zenikah',    name:'Zenikah',                       color:0x222222 },
+  { id:'ruhan',      name:'Ruhan',                         color:0x555555 },
+  { id:'cayla',      name:'Cayla',                         color:0xd98fb3 },
+  { id:'eva',        name:'Eva',                           color:0x6b4c8a },
+  { id:'priya',      name:'Priya',                         color:0xf0a030 },
+  { id:'evie',       name:'Evie',                          color:0xf0d9c4 },
+  { id:'aidan',      name:'Aidan Senekal',                 color:0x7a2b2b },
+  { id:'louis',      name:'Louis',                         color:0x2e86ab },
+  { id:'migah',      name:'Migah',                         color:0x4a7c59 },
+  { id:'jean-luther',name:'Jean-Luther',                   color:0x3d5c3a },
 ];
-const ASSET_BASE = 'assets/nextbots/';
-const IMAGE_EXTS = ['jpg','jpeg','png'];
 
 function placeholderTexture(color, label){
   return makeCanvasTexture((ctx,s)=>{
@@ -637,50 +657,20 @@ function placeholderTexture(color, label){
   }, 256);
 }
 
-const textureLoader = new THREE.TextureLoader();
-let audioCtx;
-try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
-catch(e){ audioCtx = { createMediaElementSource:()=>({connect:()=>({connect:()=>{}})}), createGain:()=>({gain:{value:0},connect:()=>({connect:()=>{}})}), createWaveShaper:()=>({curve:null}), destination:{} }; }
-
-function distortionCurve(amount){
-  const k = amount, n = 4410;
-  const curve = new Float32Array(n);
-  for(let i=0;i<n;i++){
-    const x = i*2/n - 1;
-    curve[i] = k===0 ? x : ((3+k)*x*20*(Math.PI/180)) / (Math.PI + k*Math.abs(x));
-  }
-  return curve;
-}
-function tryLoadImage(id, n, extIdx, runtime){
-  if(extIdx >= IMAGE_EXTS.length) return;
-  const path = `${ASSET_BASE}${id}/${id}-${n}.${IMAGE_EXTS[extIdx]}`;
-  textureLoader.load(path, (tex)=>{
-    runtime.loadedImageTex = tex;
-    if(runtime.instance){ runtime.instance.sprite.material.map = tex; runtime.instance.sprite.material.needsUpdate = true; }
-    const img = new Image(); img.src = path;
-    runtime.imgEl = img;
-  }, undefined, ()=>{ tryLoadImage(id, n, extIdx+1, runtime); });
-}
 function buildBotRuntime(bot){
-  const runtime = { def:bot, placeholderTex:placeholderTexture(bot.color,bot.name), loadedImageTex:null, imgEl:null, audioEl:null, gainNode:null, shaperNode:null, instance:null };
-  const imgN = 1 + Math.floor(Math.random()*bot.images);
-  tryLoadImage(bot.id, imgN, 0, runtime);
-  const soundN = 1 + Math.floor(Math.random()*bot.sounds);
-  const audioEl = new Audio(`${ASSET_BASE}${bot.id}/${bot.id}-${soundN}.mp3`);
-  audioEl.loop = true; audioEl.crossOrigin = 'anonymous';
-  audioEl.addEventListener('error', ()=>{});
-  runtime.audioEl = audioEl;
-  try{
-    const src = audioCtx.createMediaElementSource(audioEl);
-    const gain = audioCtx.createGain();
-    const shaper = audioCtx.createWaveShaper();
-    shaper.curve = distortionCurve(0);
-    gain.gain.value = 0;
-    src.connect(gain).connect(shaper).connect(audioCtx.destination);
-    runtime.gainNode = gain; runtime.shaperNode = shaper;
-  }catch(e){}
+  const runtime = { 
+    def:bot, 
+    placeholderTex:placeholderTexture(bot.color,bot.name),
+    loadedImageTex:null,
+    imgEl:null,
+    audioEl:null,
+    gainNode:null,
+    shaperNode:null,
+    instance:null 
+  };
   return runtime;
 }
+
 const botRuntimes = NEXTBOTS.map(buildBotRuntime);
 let activeInstances = [];
 let spawnQueue = [];
@@ -718,16 +708,11 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   const instance = { runtime, sprite, x:sx, z:sz };
   runtime.instance = instance;
   activeInstances.push(instance);
-  if(runtime.audioEl){ runtime.audioEl.currentTime = 0; runtime.audioEl.playbackRate=1; runtime.audioEl.play().catch(()=>{}); }
-  if(runtime.gainNode) runtime.gainNode.gain.value = 0.05;
-  if(runtime.shaperNode) runtime.shaperNode.curve = distortionCurve(0);
 }
 
 function clearBots(){
   activeInstances.forEach(inst=>{
     scene.remove(inst.sprite);
-    if(inst.runtime.audioEl){ inst.runtime.audioEl.pause(); inst.runtime.audioEl.playbackRate=1; }
-    if(inst.runtime.gainNode) inst.runtime.gainNode.gain.value = 0;
     inst.runtime.instance = null;
   });
   activeInstances = [];
@@ -799,15 +784,11 @@ function stepBot(inst, px, pz, dt, botSpeed){
   }
   
   inst.sprite.position.set(inst.x, 1.1, inst.z);
-  if(inst.runtime.gainNode){
-    const closeness = Math.max(0, Math.min(1, 1 - distToPlayer/16));
-    inst.runtime.gainNode.gain.value = Math.max(0.03, closeness*0.8);
-  }
 }
 
-/* ============================================================
-   PICKUPS
-   ============================================================ */
+// ============================================================
+// PICKUPS
+// ============================================================
 function makeDotTexture(color){
   return makeCanvasTexture((ctx,s)=>{
     ctx.clearRect(0,0,s,s);
@@ -842,9 +823,9 @@ function clearPickups(){
   pickups = [];
 }
 
-/* ============================================================
-   ROGUELIKE UPGRADES
-   ============================================================ */
+// ============================================================
+// ROGUELIKE UPGRADES
+// ============================================================
 const UPGRADES = [
   { id:'slide',     label:'Slippier Slides',           desc:'Slides keep their speed longer', apply:()=>{ slideFrictionCur = 1-(1-slideFrictionCur)*0.7; } },
   { id:'speed',     label:'Higher Base Speed',         desc:'Faster at all times', apply:()=>{ baseSpeedCur += 0.8; } },
@@ -859,6 +840,7 @@ let upgradeStacks = {};
 let currentChoicePicks = [];
 let choiceActive = false;
 let choiceDeadline = 0;
+let upgradesCollected = 0;
 
 function offerUpgrades(){
   state = 'choosing';
@@ -894,6 +876,7 @@ function finalizeChoice(u){
   choiceActive = false;
   u.apply();
   upgradeStacks[u.id] = (upgradeStacks[u.id]||0)+1;
+  upgradesCollected++;
   document.getElementById('powerupScreen').style.display = 'none';
   timeScale = 1;
   setBotAudioSlow(false);
@@ -916,9 +899,63 @@ function setBotAudioSlow(isSlow){
   botRuntimes.forEach(r=>{ if(r.audioEl){ r.audioEl.playbackRate = isSlow ? 0.35 : 1; } });
 }
 
-/* ============================================================
-   GAME STATE
-   ============================================================ */
+// ============================================================
+// HIGH SCORES
+// ============================================================
+let playerUsername = '';
+
+function getUsername() {
+  const saved = localStorage.getItem('torirooms_username');
+  if (saved) {
+    playerUsername = saved;
+    return saved;
+  }
+  return null;
+}
+
+function setUsername(name) {
+  playerUsername = name;
+  localStorage.setItem('torirooms_username', name);
+}
+
+function submitHighScore(time, distance, killedBy) {
+  if (!playerUsername) return;
+  
+  const data = {
+    username: playerUsername,
+    time: time,
+    distance: distance,
+    date: new Date().toISOString(),
+    killedBy: killedBy,
+    upgrades: upgradesCollected
+  };
+  
+  const url = HIGHSCORE_API + '?action=updateScore&data=' + encodeURIComponent(JSON.stringify(data));
+  
+  fetch(url)
+    .then(r => r.json())
+    .then(data => {
+      console.log('High score submitted:', data);
+    })
+    .catch(err => {
+      console.error('Failed to submit high score:', err);
+    });
+}
+
+function getHighScores() {
+  const url = HIGHSCORE_API + '?action=getScores';
+  return fetch(url)
+    .then(r => r.json())
+    .then(data => data.data)
+    .catch(err => {
+      console.error('Failed to get high scores:', err);
+      return { topTimes: [], topDistances: [] };
+    });
+}
+
+// ============================================================
+// GAME STATE
+// ============================================================
 let state = 'idle';
 let px=0, pz=0, yaw=0;
 let playerY=0, vy=0, onGround=true;
@@ -934,6 +971,7 @@ let pitGraceTimer = 0;
 let healFlash = 0;
 let deathSeq = 0;
 let pointerLocked = false;
+let killedBy = 'Unknown';
 
 function currentSpeed(){ return baseSpeedCur + speedBonus; }
 function spawnIntervalCur(){ return Math.max(SPAWN_INTERVAL_MIN, SPAWN_INTERVAL_BASE - elapsed*0.06); }
@@ -943,7 +981,6 @@ function expectedBotCountCur(){ return Math.floor(EXPECTED_BOT_COUNT_BASE + elap
 
 function resetGame(){
   clearBots(); clearPickups();
-  // Clean up meshes
   const toRemove = [];
   for(const [key,mesh] of meshPool){
     if(key !== '') {
@@ -964,6 +1001,8 @@ function resetGame(){
   timeScale = 1; choiceActive = false;
   expectedBotCount = EXPECTED_BOT_COUNT_BASE;
   botRespawnTimer = 0;
+  upgradesCollected = 0;
+  killedBy = 'Unknown';
 
   baseSpeedCur=BASE_SPEED; gravityCur=GRAVITY; yawRateCur=YAW_RATE;
   jumpBoostCur=COMBO_BASE; slideBoostCur=COMBO_BASE; slideFrictionCur=0.5;
@@ -1006,12 +1045,19 @@ function doSlide(){
   registerAction('slide');
 }
 
-/* ============================================================
-   INPUT
-   ============================================================ */
+// ============================================================
+// INPUT
+// ============================================================
 let pointerDown=false, startX=0, lastPX=0,lastPY=0, turnInput=0, vTrackY=0, vTrackTime=0;
 const TURN_DRAG_PX = 130;
 let keys = { w:false, a:false, s:false, d:false, space:false, shift:false };
+let isMobile = false;
+
+// Detect mobile
+if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+  isMobile = true;
+  document.getElementById('lockHint').style.display = 'none';
+}
 
 function pointerStart(x,y){ pointerDown=true; startX=x; lastPX=x; lastPY=y; vTrackY=y; vTrackTime=performance.now(); turnInput=0; }
 function pointerMove(x,y){
@@ -1034,7 +1080,7 @@ canvas.addEventListener('touchmove', e=>{ e.preventDefault(); const t=e.touches[
 canvas.addEventListener('touchend', e=>{ e.preventDefault(); pointerEnd(); }, {passive:false});
 
 canvas.addEventListener('mousedown', e=>{
-  if(!document.pointerLockElement) {
+  if(!document.pointerLockElement && !isMobile) {
     canvas.requestPointerLock();
   }
   pointerStart(e.clientX,e.clientY);
@@ -1042,7 +1088,8 @@ canvas.addEventListener('mousedown', e=>{
 
 document.addEventListener('pointerlockchange', ()=>{
   pointerLocked = !!document.pointerLockElement;
-  document.getElementById('lockHint').style.opacity = pointerLocked ? '0' : '0.4';
+  const hint = document.getElementById('lockHint');
+  if (hint) hint.style.opacity = pointerLocked ? '0' : '0.4';
 });
 
 window.addEventListener('mousemove', e=>{ 
@@ -1074,9 +1121,9 @@ window.addEventListener('keyup', e=>{
   if(code === 'KeyD') keys.d = false;
 });
 
-/* ============================================================
-   MINIMAP
-   ============================================================ */
+// ============================================================
+// MINIMAP
+// ============================================================
 const miniCanvas = document.getElementById('minimap');
 const miniCtx = miniCanvas.getContext('2d');
 function drawMinimap(){
@@ -1126,9 +1173,9 @@ function drawMinimap(){
   miniCtx.restore();
 }
 
-/* ============================================================
-   MAIN LOOP
-   ============================================================ */
+// ============================================================
+// MAIN LOOP
+// ============================================================
 let lastT = performance.now();
 function tick(){
   requestAnimationFrame(tick);
@@ -1204,7 +1251,7 @@ function update(dt){
   if(keys.a) kTurn = -1;
   if(keys.d) kTurn = 1;
   if(keys.w) pointerDown = true;
-  if(!keys.w) pointerDown = false;
+  if(!keys.w && !isMobile) pointerDown = false;
   
   const desiredTurn = (pointerLocked ? kTurn : 0) + (pointerDown ? turnInput : 0);
   yaw -= desiredTurn * yawRateCur * dt;
@@ -1403,6 +1450,13 @@ function dieByBot(runtime, message){
   state = 'dead';
   const mySeq = ++deathSeq;
 
+  // Record who killed the player
+  if (runtime) {
+    killedBy = runtime.def.name;
+  } else if (message) {
+    killedBy = 'Pit';
+  }
+
   const js = document.getElementById('jumpscare');
   js.className = '';
   if(!message && runtime && runtime.imgEl){
@@ -1435,24 +1489,91 @@ function dieByBot(runtime, message){
       document.getElementById('goTitle').textContent = 'CAUGHT';
     }
     document.getElementById('finalTime').textContent = elapsed.toFixed(1)+'s';
-    document.getElementById('finalDist').textContent = Math.floor(Math.hypot(px,pz))+'m traveled';
+    document.getElementById('finalDist').textContent = Math.floor(Math.hypot(px,pz))+'m';
+    document.getElementById('finalKiller').textContent = 'Killed by: ' + killedBy;
+    document.getElementById('finalUpgrades').textContent = 'Upgrades collected: ' + upgradesCollected;
     document.getElementById('gameOverScreen').style.display = 'flex';
+    
+    // Submit high score
+    submitHighScore(elapsed, Math.floor(Math.hypot(px,pz)), killedBy);
   }, message ? 300 : 900);
 }
 
+// ============================================================
+// UI EVENT HANDLERS
+// ============================================================
 document.getElementById('startBtn').addEventListener('click', ()=>{
-  if(audioCtx.resume) audioCtx.resume();
-  document.getElementById('startScreen').style.display='none';
+  const username = getUsername();
+  if (!username) {
+    document.getElementById('startScreen').style.display = 'none';
+    document.getElementById('usernamePrompt').style.display = 'flex';
+    document.getElementById('usernameInput').focus();
+    return;
+  }
+  startGame();
+});
+
+document.getElementById('usernameConfirm').addEventListener('click', ()=>{
+  const input = document.getElementById('usernameInput');
+  const name = input.value.trim();
+  if (name.length > 0) {
+    setUsername(name);
+    document.getElementById('usernamePrompt').style.display = 'none';
+    startGame();
+  }
+});
+
+document.getElementById('usernameInput').addEventListener('keydown', (e)=>{
+  if (e.key === 'Enter') {
+    document.getElementById('usernameConfirm').click();
+  }
+});
+
+function startGame() {
+  if (audioCtx && audioCtx.resume) audioCtx.resume();
+  document.getElementById('startScreen').style.display = 'none';
+  document.getElementById('usernamePrompt').style.display = 'none';
   resetGame();
   state = 'playing';
-});
+}
+
 document.getElementById('retryBtn').addEventListener('click', ()=>{
-  document.getElementById('gameOverScreen').style.display='none';
+  document.getElementById('gameOverScreen').style.display = 'none';
   resetGame();
   state = 'playing';
 });
 
+// ============================================================
+// AUDIO CONTEXT (placeholder for now)
+// ============================================================
+let audioCtx;
+try{ audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }
+catch(e){ audioCtx = null; }
+
+function distortionCurve(amount){
+  const k = amount, n = 4410;
+  const curve = new Float32Array(n);
+  for(let i=0;i<n;i++){
+    const x = i*2/n - 1;
+    curve[i] = k===0 ? x : ((3+k)*x*20*(Math.PI/180)) / (Math.PI + k*Math.abs(x));
+  }
+  return curve;
+}
+
+// ============================================================
+// INITIALIZATION
+// ============================================================
 resetGame();
+
+// Show username prompt on first load if needed
+if (!getUsername()) {
+  // Wait a moment then show
+  setTimeout(() => {
+    document.getElementById('usernamePrompt').style.display = 'flex';
+    document.getElementById('usernameInput').focus();
+  }, 100);
+}
+
 requestAnimationFrame(tick);
 })();
 </script>
