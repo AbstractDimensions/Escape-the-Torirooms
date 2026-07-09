@@ -228,8 +228,8 @@
 <!-- Start Screen -->
 <div id="startScreen">
   <h1>
-    <img src="title.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.3</span>';">
-    <span class="version-tag">v1.0.3</span>
+    <img src="title.jpg" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.4</span>';">
+    <span class="version-tag">v1.0.4</span>
   </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
@@ -277,7 +277,7 @@
 // ============================================================
 // VERSION
 // ============================================================
-const VERSION = 'v1.0.3';
+const VERSION = 'v1.0.4';
 
 // ============================================================
 // CONFIGURATION
@@ -324,12 +324,13 @@ const BOB_FREQ       = 1.7;
 const EXPECTED_BOT_COUNT_BASE = 3;
 const EXPECTED_BOT_COUNT_GROWTH = 1;
 const BOT_RESPAWN_DELAY = 5;
+const BOT_SPAWN_DOT_THRESHOLD = 0.3; // How far behind the player bots can spawn
 
 // HIGH SCORES API
 const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbw1TSJCYskcAjAhL2xENVnZU15jJ06YQ2d6PEJkgVVPGGbQ-crFsiWe0AVe_JeUgJ0iKQ/exec';
 
 // ============================================================
-// FILE LOADING SYSTEM - Root folder with numbered files
+// FILE LOADING SYSTEM
 // ============================================================
 const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'svg'];
 const AUDIO_EXTS = ['mp3', 'ogg', 'wav', 'm4a', 'aac', 'flac', 'mp4'];
@@ -518,7 +519,7 @@ function floorDiv(a,b){ return Math.floor(a/b); }
 function mod(a,b){ return ((a%b)+b)%b; }
 
 // ============================================================
-// DUNGEON GENERATION - FIXED: 1-cell wide corridors
+// DUNGEON GENERATION
 // ============================================================
 const WALL=0, OPEN=1, PIT=2, WALL_SLIT=3;
 const MIN_ROOM_SIZE = 2;
@@ -557,13 +558,11 @@ function getCell(cx0,cz0){
   const cx = cx0 + roomOffsetX;
   const cz = cz0 + roomOffsetZ;
   
-  // Room grid - each room is 10x10 cells
   const rx = floorDiv(cx, 10);
   const rz = floorDiv(cz, 10);
   const localX = cx - rx * 10;
   const localZ = cz - rz * 10;
   
-  // Room size varies
   const roomSizeX = getRoomSize(rx, rz, mazeSeed);
   const roomSizeZ = getRoomSize(rx, rz, mazeSeed + 1);
   
@@ -594,20 +593,15 @@ function getCell(cx0,cz0){
   } else {
     // OUTSIDE ROOMS - corridors and walls
     
-    // Check if we're on a corridor path between rooms
-    // Corridors are 1 cell wide and run in straight lines
+    // Check if we're on a corridor path
+    const isHorizontalCorridorRow = (localZ === roomSizeZ);
+    const isVerticalCorridorCol = (localX === roomSizeX);
     
-    // Horizontal corridor (going right from room)
-    const isHorizontalCorridor = (localX === roomSizeX);
-    // Vertical corridor (going down from room)
-    const isVerticalCorridor = (localZ === roomSizeZ);
-    
-    if (isHorizontalCorridor && !isVerticalCorridor) {
-      // Horizontal corridor row
+    if (isHorizontalCorridorRow && localX >= roomSizeX) {
+      // Horizontal corridor going right
       const corridorLength = getCorridorLength(rx, rz, 1, mazeSeed);
       const offset = localX - roomSizeX;
-      if (offset >= 0 && offset < corridorLength && localZ === roomSizeZ) {
-        // This is a 1-cell-wide corridor
+      if (offset < corridorLength) {
         const mid = Math.floor(corridorLength / 2);
         if (offset === mid) {
           const r = hash2(rx*7 + 3, rz*7 + 3, mazeSeed + 131);
@@ -620,12 +614,11 @@ function getCell(cx0,cz0){
       } else {
         type = WALL;
       }
-    } else if (!isHorizontalCorridor && isVerticalCorridor) {
-      // Vertical corridor column
+    } else if (isVerticalCorridorCol && localZ >= roomSizeZ) {
+      // Vertical corridor going down
       const corridorLength = getCorridorLength(rx, rz, 2, mazeSeed);
       const offset = localZ - roomSizeZ;
-      if (offset >= 0 && offset < corridorLength && localX === roomSizeX) {
-        // This is a 1-cell-wide corridor
+      if (offset < corridorLength) {
         const mid = Math.floor(corridorLength / 2);
         if (offset === mid) {
           const r = hash2(rx*7 + 7, rz*7 + 7, mazeSeed + 313);
@@ -639,7 +632,6 @@ function getCell(cx0,cz0){
         type = WALL;
       }
     } else {
-      // Corners between rooms - solid walls
       type = WALL;
     }
   }
@@ -808,20 +800,42 @@ function resolveCollision(x,z){
   return [x,z];
 }
 
-function findOpenSpawnPoint(fromX,fromZ,minDist,maxDist,preferDirection=null){
-  for(let tries=0; tries<50; tries++){
+function findOpenSpawnPoint(fromX, fromZ, minDist, maxDist, preferDirection) {
+  // preferDirection is the angle we want to spawn in (0 = forward)
+  // Dot product approach: if direction is forward (dot > 0.3), spawn at render distance
+  // If behind (dot < -0.3), spawn closer
+  
+  for(let tries=0; tries<60; tries++){
+    // Generate a random direction with bias toward preferDirection
     let ang;
-    if(preferDirection !== null && tries < 20){
-      ang = preferDirection + (Math.random() - 0.5) * 0.8;
+    if(preferDirection !== null && tries < 30) {
+      // Bias toward preferred direction with some randomness
+      const bias = 0.7;
+      const randomAngle = (Math.random() - 0.5) * Math.PI * 0.8;
+      ang = preferDirection + randomAngle * (1 - bias);
     } else {
       ang = Math.random() * Math.PI * 2;
     }
-    const dist = minDist + Math.random()*(maxDist-minDist);
-    const x = fromX + Math.sin(ang)*dist;
-    const z = fromZ + Math.cos(ang)*dist;
+    
+    // Calculate dot product with forward direction (0, -1)
+    const forwardX = 0;
+    const forwardZ = -1;
+    const dirX = Math.sin(ang);
+    const dirZ = Math.cos(ang);
+    const dot = dirX * forwardX + dirZ * forwardZ;
+    
+    // Map dot (-1 to 1) to distance: dot=1 (forward) -> maxDist, dot=-1 (behind) -> minDist * 0.3
+    const normalizedDot = (dot + 1) / 2; // 0 to 1
+    const distanceRange = maxDist - minDist * 0.3;
+    const dist = minDist * 0.3 + normalizedDot * distanceRange;
+    
+    const x = fromX + Math.sin(ang) * dist;
+    const z = fromZ + Math.cos(ang) * dist;
+    
     if(cellTypeAtWorld(x,z) === OPEN) return [x,z];
   }
-  return [fromX, fromZ+minDist];
+  // Fallback
+  return [fromX + (Math.random()-0.5)*CELL*2, fromZ + (Math.random()-0.5)*CELL*2];
 }
 
 // ============================================================
@@ -909,7 +923,6 @@ function shuffledRoster(){
 async function loadBotAssets(runtime) {
   const botId = runtime.def.id;
   
-  // Load images: botId1.*, botId2.*, etc.
   const imageUrls = await loadNumberedFiles(botId, IMAGE_EXTS, 10);
   runtime.images = imageUrls;
   if (imageUrls.length > 0) {
@@ -929,14 +942,12 @@ async function loadBotAssets(runtime) {
     img.src = imageUrls[0];
   }
   
-  // Load sounds: botId_sound1.*, botId_sound2.*, etc.
   const soundUrls = await loadNumberedFiles(botId + '_sound', AUDIO_EXTS, 10);
   runtime.sounds = soundUrls;
   if (soundUrls.length > 0) {
     console.log(`✅ ${soundUrls.length} sound(s) found for ${botId}`);
   }
   
-  // Load music: botId_music1.*, botId_music2.*, etc.
   const musicUrls = await loadNumberedFiles(botId + '_music', AUDIO_EXTS, 10);
   runtime.music = musicUrls;
   if (musicUrls.length > 0) {
@@ -945,21 +956,33 @@ async function loadBotAssets(runtime) {
 }
 
 function spawnBot(runtime, px, pz, preferDirection=null){
-  let minDist = SPAWN_EDGE_MIN;
+  // preferDirection: angle in radians (0 = forward, -PI/2 = left, PI/2 = right)
+  // Determine spawn distance based on dot product with forward direction
+  let minDist = SPAWN_EDGE_MIN * 0.3;
   let maxDist = SPAWN_EDGE_MAX;
   
   if(preferDirection !== null) {
-    const angleDiff = Math.abs(preferDirection - Math.atan2(0, -1));
-    if(angleDiff < 1.2) {
-      minDist = SPAWN_EDGE_MIN;
-      maxDist = SPAWN_EDGE_MAX;
-    } else {
-      minDist = 2 * CELL;
-      maxDist = 4 * CELL;
-    }
+    // Calculate dot product with forward direction (0, -1)
+    const forwardX = 0;
+    const forwardZ = -1;
+    const dirX = Math.sin(preferDirection);
+    const dirZ = Math.cos(preferDirection);
+    const dot = dirX * forwardX + dirZ * forwardZ;
+    
+    // dot: 1 = forward, -1 = behind
+    // Map dot to distance multiplier: forward = 1.0, behind = 0.2
+    const normalizedDot = (dot + 1) / 2; // 0 to 1
+    const distMultiplier = 0.2 + normalizedDot * 0.8;
+    
+    minDist = SPAWN_EDGE_MIN * distMultiplier;
+    maxDist = SPAWN_EDGE_MAX * distMultiplier;
   }
   
-  const [sx,sz] = findOpenSpawnPoint(px,pz, minDist, maxDist, preferDirection);
+  // Clamp distances
+  minDist = Math.max(minDist, 2 * CELL);
+  maxDist = Math.max(maxDist, minDist + CELL);
+  
+  const [sx,sz] = findOpenSpawnPoint(px, pz, minDist, maxDist, preferDirection);
   
   let texture;
   if (runtime.imgEl) {
@@ -988,7 +1011,7 @@ function clearBots(){
 }
 
 function relocateBot(inst, px, pz){
-  const [sx,sz] = findOpenSpawnPoint(px,pz, SPAWN_EDGE_MIN, SPAWN_EDGE_MAX);
+  const [sx,sz] = findOpenSpawnPoint(px, pz, SPAWN_EDGE_MIN * 0.5, SPAWN_EDGE_MAX);
   inst.x = sx; inst.z = sz;
 }
 
@@ -1079,7 +1102,7 @@ let pickups = [];
 let lastHealSpawnAt = 0, lastPowerSpawnAt = 0;
 
 function spawnPickup(type, px, pz){
-  const [x,z] = findOpenSpawnPoint(px,pz, 6, 16);
+  const [x,z] = findOpenSpawnPoint(px, pz, 6, 16, null);
   const mat = new THREE.SpriteMaterial({map: type==='heal'? healTex : powerTex});
   const sprite = new THREE.Sprite(mat);
   sprite.scale.set(1.2,1.2,1.2);
@@ -1242,7 +1265,6 @@ function renderHighScores(scores, currentTime, currentDist) {
   
   let html = '';
   
-  // Times leaderboard
   html += '<div class="leaderboard">';
   html += '<div class="leaderboard-title">TOP 10 TIMES</div>';
   if (topTimes.length === 0) {
@@ -1259,7 +1281,6 @@ function renderHighScores(scores, currentTime, currentDist) {
   }
   html += '</div>';
   
-  // Distances leaderboard
   html += '<div class="leaderboard">';
   html += '<div class="leaderboard-title">TOP 10 DISTANCES</div>';
   if (topDistances.length === 0) {
@@ -1287,7 +1308,6 @@ let ambienceGain = null;
 let ambienceSource = null;
 let menuGain = null;
 let menuSource = null;
-let botGainNodes = new Map();
 
 function initAudio() {
   try {
@@ -1298,36 +1318,6 @@ function initAudio() {
     console.log('❌ Audio context failed:', e.message);
     return false;
   }
-}
-
-function playAudioFile(url, loop = false, gainValue = 0.3) {
-  if (!audioCtx) return null;
-  
-  console.log('🎵 Loading audio:', url);
-  return fetch(url)
-    .then(response => {
-      if (!response.ok) throw new Error('Not found');
-      return response.arrayBuffer();
-    })
-    .then(buffer => audioCtx.decodeAudioData(buffer))
-    .then(decoded => {
-      console.log('✅ Audio loaded:', url);
-      
-      const gain = audioCtx.createGain();
-      gain.gain.value = gainValue;
-      gain.connect(audioCtx.destination);
-      
-      const source = audioCtx.createBufferSource();
-      source.buffer = decoded;
-      source.loop = loop;
-      source.connect(gain);
-      source.start();
-      return { source, gain };
-    })
-    .catch(err => {
-      console.log('❌ Audio failed:', url, err.message);
-      return null;
-    });
 }
 
 function playAmbience() {
@@ -1820,8 +1810,17 @@ function updateChoiceUI(now){
 
   if(timeLeft<=0 && choiceActive){
     choiceActive = false;
+    // Auto-pick the middle option
     const mid = currentChoicePicks[1] || currentChoicePicks[0];
-    if(mid) finalizeChoice(mid);
+    if(mid) {
+      finalizeChoice(mid);
+    } else {
+      // Emergency fallback
+      document.getElementById('powerupScreen').style.display = 'none';
+      timeScale = 1;
+      setBotAudioSlow(false);
+      state = 'playing';
+    }
   }
 }
 
@@ -2129,7 +2128,6 @@ function dieByBot(runtime, message){
     killedBy = 'Pit';
   }
 
-  // Show jumpscare instantly
   const js = document.getElementById('jumpscare');
   js.className = '';
   if(!message && runtime && runtime.imgEl){
@@ -2166,7 +2164,7 @@ function dieByBot(runtime, message){
   
   stopAmbience();
   
-  // Show game over screen immediately, fetch high scores in background
+  // Show game over screen immediately
   document.getElementById('gameOverScreen').style.display = 'flex';
   
   // Fetch high scores asynchronously - don't block death screen
