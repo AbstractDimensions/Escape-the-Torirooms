@@ -228,8 +228,8 @@
 <!-- Start Screen -->
 <div id="startScreen">
   <h1>
-    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.7</span>';">
-    <span class="version-tag">v1.0.7</span>
+    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.8</span>';">
+    <span class="version-tag">v1.0.8</span>
   </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
@@ -277,7 +277,7 @@
 // ============================================================
 // VERSION
 // ============================================================
-const VERSION = 'v1.0.7';
+const VERSION = 'v1.0.8';
 
 // ============================================================
 // CONFIGURATION
@@ -329,19 +329,19 @@ const BOT_RESPAWN_DELAY = 5;
 const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbw1TSJCYskcAjAhL2xENVnZU15jJ06YQ2d6PEJkgVVPGGbQ-crFsiWe0AVe_JeUgJ0iKQ/exec';
 
 // ============================================================
-// FILE CACHE - GitHub API scan
+// FILE CACHE - GitHub API
 // ============================================================
 let fileCache = {};
 let fileCacheLoaded = false;
 
 async function scanGitHubFiles() {
   const repo = 'AbstractDimensions/Escape-the-Torirooms';
-  const baseUrl = `https://api.github.com/repos/${repo}/contents`;
+  const url = `https://api.github.com/repos/${repo}/contents`;
   
   console.log('📂 Scanning GitHub repository for files...');
   
   try {
-    const response = await fetch(baseUrl);
+    const response = await fetch(url);
     if (!response.ok) {
       console.log('⚠️ GitHub API error:', response.status);
       return;
@@ -510,11 +510,11 @@ function floorDiv(a,b){ return Math.floor(a/b); }
 function mod(a,b){ return ((a%b)+b)%b; }
 
 // ============================================================
-// DUNGEON GENERATION - Large rooms (3x larger), corridors 1-4 wide
+// DUNGEON GENERATION - Rooms +2 at final step
 // ============================================================
 const WALL=0, OPEN=1, PIT=2, WALL_SLIT=3;
-const MIN_ROOM_SIZE = 9;   // 3x larger (was 3)
-const MAX_ROOM_SIZE = 21;  // 3x larger (was 7)
+const MIN_ROOM_SIZE = 3;
+const MAX_ROOM_SIZE = 7;
 let mazeSeed = 1;
 let roomOffsetX = 0, roomOffsetZ = 0;
 let cellCache = new Map();
@@ -527,7 +527,8 @@ function cellKey(cx,cz){ return cx+','+cz; }
 
 function getRoomSize(rx, rz, seed) {
   const h = hash2(rx, rz, seed + 777);
-  return Math.floor(MIN_ROOM_SIZE + h * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1));
+  const size = Math.floor(MIN_ROOM_SIZE + h * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1));
+  return size + 2; // Add 2 cells (1 on each side) so rooms connect to corridors
 }
 
 function getCorridorWidth(rx, rz, dir, seed) {
@@ -549,7 +550,7 @@ function getCell(cx0,cz0){
   const cx = cx0 + roomOffsetX;
   const cz = cz0 + roomOffsetZ;
   
-  const rx = floorDiv(cx, 30);  // Larger room grid spacing
+  const rx = floorDiv(cx, 30);
   const rz = floorDiv(cz, 30);
   const localX = cx - rx * 30;
   const localZ = cz - rz * 30;
@@ -563,7 +564,6 @@ function getCell(cx0,cz0){
   let type;
 
   if(inRoomX && inRoomZ) {
-    // Inside a room - more open, occasional pits/slits
     const roomRand = hash2(rx, rz, mazeSeed + 51);
     
     if(roomRand < 0.20) {
@@ -582,23 +582,16 @@ function getCell(cx0,cz0){
       type = OPEN;
     }
   } else {
-    // OUTSIDE ROOMS - corridors (1-4 cells wide, infinite length until next room)
     const isHorizontalCorridor = (localZ === roomSizeZ);
     const isVerticalCorridor = (localX === roomSizeX);
     
-    // Get corridor width
     const corridorWidth = getCorridorWidth(rx, rz, isHorizontalCorridor ? 1 : 2, mazeSeed);
     const halfWidth = Math.floor(corridorWidth / 2);
     
-    // Check if we're within the corridor band
     const inHorizontalBand = isHorizontalCorridor && localX >= roomSizeX && Math.abs(localZ - roomSizeZ) <= halfWidth;
     const inVerticalBand = isVerticalCorridor && localZ >= roomSizeZ && Math.abs(localX - roomSizeX) <= halfWidth;
     
-    if (inHorizontalBand) {
-      // Horizontal corridor - everything is OPEN
-      type = OPEN;
-    } else if (inVerticalBand) {
-      // Vertical corridor - everything is OPEN
+    if (inHorizontalBand || inVerticalBand) {
       type = OPEN;
     } else {
       type = WALL;
@@ -747,7 +740,7 @@ function refreshMazeMeshes(px,pz){
 }
 
 // ============================================================
-// COLLISION - Full cell coverage (no gaps, consistent for jumping/crouching)
+// COLLISION
 // ============================================================
 function isInsideWall(x,z) {
   const t = cellTypeAtWorld(x,z);
@@ -755,11 +748,9 @@ function isInsideWall(x,z) {
 }
 
 function resolveCollision(x,z) {
-  // Get all cells that overlap with the player
-  const cellRadius = 1; // Check 1 cell in each direction
+  const cellRadius = 1;
   const [cx,cz] = worldToCell(x,z);
   
-  // Check all cells in a 3x3 grid around the player
   for (let dx = -cellRadius; dx <= cellRadius; dx++) {
     for (let dz = -cellRadius; dz <= cellRadius; dz++) {
       const checkX = cx + dx;
@@ -774,7 +765,6 @@ function resolveCollision(x,z) {
       const halfZ = CELL / 2;
       const radius = PLAYER_RADIUS;
       
-      // Check if the player circle overlaps with this wall cell
       const closestX = Math.max(wx - halfX, Math.min(x, wx + halfX));
       const closestZ = Math.max(wz - halfZ, Math.min(z, wz + halfZ));
       const distX = x - closestX;
@@ -782,14 +772,12 @@ function resolveCollision(x,z) {
       const dist = Math.hypot(distX, distZ);
       
       if (dist < radius && dist > 0.0001) {
-        // Push player out of the wall
         const overlap = radius - dist;
         const pushX = (distX / dist) * overlap;
         const pushZ = (distZ / dist) * overlap;
         x += pushX;
         z += pushZ;
       } else if (dist < 0.0001) {
-        // Player is exactly at the center of the wall - push them out
         x += radius;
       }
     }
@@ -908,7 +896,6 @@ function shuffledRoster(){
 async function loadBotAssets(runtime) {
   const botId = runtime.def.id;
   
-  // Get image URL from cache
   const imageUrls = getFileUrls(botId);
   if (imageUrls.length > 0) {
     runtime.imageUrl = imageUrls[0];
@@ -1057,7 +1044,6 @@ function stepBot(inst, px, pz, dt, botSpeed){
     }
   }
   
-  // Collision check for bot
   if(isBlockedForBot(inst.x, inst.z)) {
     const [cx,cz] = worldToCell(inst.x, inst.z);
     const [wx,wz] = cellCenter(cx,cz);
@@ -1597,8 +1583,9 @@ function registerAction(kind){
 
 function doJump(){
   if(state!=='playing') return;
-  // Cannot jump while sliding (including in slits)
-  if(sliding) return;
+  // Only block jumping if inside a slit
+  const inSlit = cellTypeAtWorld(px,pz) === WALL_SLIT;
+  if(inSlit) return;
   if(!onGround && !wallrunning) return;
   vy = JUMP_VY; onGround=false; sliding=false; wallrunning=false;
   registerAction('jump');
@@ -1798,6 +1785,7 @@ function updateChoiceUI(now){
     if(mid) {
       finalizeChoice(mid);
     } else {
+      // Emergency fallback - close the screen
       document.getElementById('powerupScreen').style.display = 'none';
       timeScale = 1;
       setBotAudioSlow(false);
@@ -1901,7 +1889,6 @@ function update(dt){
   const desiredTurn = (pointerLocked ? kTurn : 0) + (pointerDown ? turnInput : 0);
   yaw -= desiredTurn * yawRateCur * dt;
 
-  // Wallrunning
   const sideL = [px + Math.sin(yaw-Math.PI/2)*(PLAYER_RADIUS+0.6), pz + Math.cos(yaw-Math.PI/2)*(PLAYER_RADIUS+0.6)];
   const sideR = [px + Math.sin(yaw+Math.PI/2)*(PLAYER_RADIUS+0.6), pz + Math.cos(yaw+Math.PI/2)*(PLAYER_RADIUS+0.6)];
   const wallLeft  = cellTypeAtWorld(sideL[0],sideL[1]) === WALL;
@@ -1946,7 +1933,6 @@ function update(dt){
     slideSpeed = Math.max(currentSpeed() * 0.3, SLIDE_FORCED_MIN);
   }
 
-  // Pit death
   const [hcx,hcz] = worldToCell(px,pz);
   const hereType = getCell(hcx,hcz).type;
   if(hereType===PIT){
@@ -1959,7 +1945,6 @@ function update(dt){
     } else { pitGraceTimer = 0; }
   } else { pitGraceTimer = 0; }
 
-  // Refresh maze
   const [newCX, newCZ] = worldToCell(px,pz);
   if (newCX !== lastCellX || newCZ !== lastCellZ) {
     lastCellX = newCX;
@@ -1968,7 +1953,6 @@ function update(dt){
     refreshMazeMeshes(px,pz);
   }
 
-  // Spawn bots
   if(elapsed - lastSpawnAt > spawnIntervalCur() && spawnQueue.length){
     lastSpawnAt = elapsed;
     const playerDir = Math.atan2(0, -1);
@@ -1976,7 +1960,6 @@ function update(dt){
     spawnBot(spawnQueue.shift(), px, pz, spawnDir);
   }
 
-  // Bot count management
   const targetCount = expectedBotCountCur();
   if(activeInstances.length < targetCount) {
     botRespawnTimer += dt;
@@ -1994,14 +1977,12 @@ function update(dt){
     botRespawnTimer = 0;
   }
 
-  // Pickups
   if(elapsed - lastHealSpawnAt > HEAL_SPAWN_INTERVAL){ lastHealSpawnAt = elapsed; spawnPickup('heal', px, pz); }
   if(elapsed - lastPowerSpawnAt > POWER_SPAWN_INTERVAL){ lastPowerSpawnAt = elapsed; spawnPickup('power', px, pz); }
 
   const bSpeed = botSpeedCur();
   activeInstances.forEach(inst=>stepBot(inst, px, pz, dt, bSpeed));
 
-  // Pickup magnet
   for(let i=pickups.length-1;i>=0;i--){
     const p = pickups[i];
     const dx = px-p.x, dz = pz-p.z;
@@ -2030,7 +2011,6 @@ function update(dt){
   healFlash = Math.max(0, healFlash - dt*1.6);
   document.getElementById('healFlash').style.opacity = healFlash.toFixed(3);
 
-  // Proximity effect
   let minDist = Infinity;
   activeInstances.forEach(inst=>{ const d=Math.hypot(inst.x-px, inst.z-pz); if(d<minDist) minDist=d; });
   const PROX_RANGE = 11;
@@ -2039,7 +2019,6 @@ function update(dt){
   const pulse = 0.7 + 0.3*Math.sin(elapsed*pulseSpeed);
   document.getElementById('proximity').style.opacity = (closeness*closeness*pulse).toFixed(3);
 
-  // UI updates
   const interval = spawnIntervalCur();
   const nextIn = Math.max(0, interval - (elapsed-lastSpawnAt));
   const spawnFrac = spawnQueue.length ? 1-(nextIn/interval) : 1;
