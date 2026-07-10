@@ -58,6 +58,14 @@
     },
     {
       "username": "louis",
+      "time": 13.2,
+      "distance": 140,
+      "date": "2026-07-10T13:19:16.496Z",
+      "killedBy": "Unknown",
+      "upgrades": 0
+    },
+    {
+      "username": "louis",
       "time": 11.1,
       "distance": 91,
       "date": "2026-07-10T13:11:01.339Z",
@@ -69,14 +77,6 @@
       "time": 9.6,
       "distance": 44,
       "date": "2026-07-10T13:12:35.848Z",
-      "killedBy": "Unknown",
-      "upgrades": 0
-    },
-    {
-      "username": "louis",
-      "time": 8,
-      "distance": 77,
-      "date": "2026-07-10T12:32:46.774Z",
       "killedBy": "Unknown",
       "upgrades": 0
     }
@@ -123,6 +123,14 @@
       "upgrades": 0
     },
     {
+      "username": "louis",
+      "distance": 140,
+      "time": 13.2,
+      "date": "2026-07-10T13:19:16.496Z",
+      "killedBy": "Unknown",
+      "upgrades": 0
+    },
+    {
       "username": "Louis",
       "distance": 114,
       "time": 13.7,
@@ -151,14 +159,6 @@
       "distance": 77,
       "time": 8,
       "date": "2026-07-10T12:32:46.774Z",
-      "killedBy": "Unknown",
-      "upgrades": 0
-    },
-    {
-      "username": "Louis",
-      "distance": 44,
-      "time": 9.6,
-      "date": "2026-07-10T13:12:35.848Z",
       "killedBy": "Unknown",
       "upgrades": 0
     }
