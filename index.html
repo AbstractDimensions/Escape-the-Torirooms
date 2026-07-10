@@ -228,8 +228,8 @@
 <!-- Start Screen -->
 <div id="startScreen">
   <h1>
-    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.9</span>';">
-    <span class="version-tag">v1.0.9</span>
+    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.1.0</span>';">
+    <span class="version-tag">v1.1.0</span>
   </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
@@ -277,7 +277,7 @@
 // ============================================================
 // VERSION
 // ============================================================
-const VERSION = 'v1.0.9';
+const VERSION = 'v1.1.0';
 
 // ============================================================
 // CONFIGURATION
@@ -329,6 +329,25 @@ const BOT_RESPAWN_DELAY = 5;
 const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbw1TSJCYskcAjAhL2xENVnZU15jJ06YQ2d6PEJkgVVPGGbQ-crFsiWe0AVe_JeUgJ0iKQ/exec';
 
 // ============================================================
+// LOGGING
+// ============================================================
+function log(msg) {
+  console.log(msg);
+}
+
+function logError(msg) {
+  console.error('❌ ' + msg);
+}
+
+function logSuccess(msg) {
+  console.log('✅ ' + msg);
+}
+
+function logWarn(msg) {
+  console.warn('⚠️ ' + msg);
+}
+
+// ============================================================
 // FILE CACHE - GitHub API
 // ============================================================
 let fileCache = {};
@@ -338,39 +357,41 @@ async function scanGitHubFiles() {
   const repo = 'AbstractDimensions/Escape-the-Torirooms';
   const url = `https://api.github.com/repos/${repo}/contents`;
   
-  console.log('📂 Scanning GitHub repository for files...');
+  log('📂 Scanning GitHub repository for files...');
   
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      console.log('⚠️ GitHub API error:', response.status);
+      logError('GitHub API error: ' + response.status);
       return;
     }
     const data = await response.json();
+    log('📊 GitHub API returned ' + data.length + ' items');
+    
     for (const item of data) {
       if (item.type === 'file') {
         const ext = item.name.split('.').pop().toLowerCase();
         const base = item.name.substring(0, item.name.lastIndexOf('.'));
         if (!fileCache[base]) fileCache[base] = [];
         fileCache[base].push(ext);
+        log('   📎 Found: ' + item.name + ' (base: ' + base + ', ext: ' + ext + ')');
       }
     }
     fileCacheLoaded = true;
-    console.log('📂 File cache loaded:', Object.keys(fileCache).length, 'base filenames found');
+    logSuccess('File cache loaded: ' + Object.keys(fileCache).length + ' base filenames found');
   } catch(e) {
-    console.log('⚠️ Error scanning GitHub:', e.message);
+    logError('Error scanning GitHub: ' + e.message);
   }
 }
 
-function getFileUrl(baseName) {
-  if (!fileCache[baseName]) return null;
-  const ext = fileCache[baseName][0];
-  return baseName + '.' + ext;
-}
-
 function getFileUrls(baseName) {
-  if (!fileCache[baseName]) return [];
-  return fileCache[baseName].map(ext => baseName + '.' + ext);
+  if (!fileCache[baseName]) {
+    log('   ❌ No files found for base: ' + baseName);
+    return [];
+  }
+  const urls = fileCache[baseName].map(ext => baseName + '.' + ext);
+  log('   📁 Found ' + urls.length + ' file(s) for base "' + baseName + '": ' + urls.join(', '));
+  return urls;
 }
 
 // ============================================================
@@ -510,9 +531,10 @@ function floorDiv(a,b){ return Math.floor(a/b); }
 function mod(a,b){ return ((a%b)+b)%b; }
 
 // ============================================================
-// DUNGEON GENERATION - INVERTED: Empty world with wall nodes
+// INFINITE WALL GENERATION - Hash-based on-demand
 // ============================================================
 const WALL=0, OPEN=1, PIT=2, WALL_SLIT=3;
+const CHUNK_SIZE = 8; // Cells per chunk
 let mazeSeed = 1;
 let roomOffsetX = 0, roomOffsetZ = 0;
 let cellCache = new Map();
@@ -523,68 +545,79 @@ const floorTileGeo = new THREE.PlaneGeometry(CELL, CELL);
 
 function cellKey(cx,cz){ return cx+','+cz; }
 
-// Generate wall nodes (rectangles of walls)
-function generateWallNodes() {
-  const nodes = [];
-  const numNodes = 5 + Math.floor(Math.random() * 10); // 5-15 nodes
+// Get wall node for a chunk
+function getWallNode(chunkX, chunkZ) {
+  const seed = mazeSeed + 999;
+  const h = hash2(chunkX, chunkZ, seed);
   
-  for (let i = 0; i < numNodes; i++) {
-    const x = (Math.random() - 0.5) * 80;
-    const z = (Math.random() - 0.5) * 80;
-    const w = 2 + Math.floor(Math.random() * 6); // 2-7 cells wide
-    const h = 2 + Math.floor(Math.random() * 6); // 2-7 cells tall
-    nodes.push({ x: Math.round(x / CELL), z: Math.round(z / CELL), w, h });
+  // 40% chance of having a wall node in this chunk
+  if (h < 0.40) {
+    const sizeW = 3 + Math.floor(hash2(chunkX+1, chunkZ, seed) * 8); // 3-10 cells wide
+    const sizeH = 3 + Math.floor(hash2(chunkX, chunkZ+1, seed) * 8); // 3-10 cells tall
+    const offsetX = Math.floor(hash2(chunkX+2, chunkZ, seed) * (CHUNK_SIZE - sizeW));
+    const offsetZ = Math.floor(hash2(chunkX, chunkZ+2, seed) * (CHUNK_SIZE - sizeH));
+    
+    return {
+      x: chunkX * CHUNK_SIZE + offsetX,
+      z: chunkZ * CHUNK_SIZE + offsetZ,
+      w: sizeW,
+      h: sizeH
+    };
   }
-  return nodes;
+  return null;
 }
 
-// Generate connections between nodes (lines of walls or obstacles)
-function generateConnections(nodes) {
-  const connections = [];
-  for (let i = 0; i < nodes.length - 1; i++) {
-    const a = nodes[i];
-    const b = nodes[i + 1];
-    const type = Math.random() < 0.33 ? WALL_SLIT : (Math.random() < 0.5 ? WALL : PIT);
-    connections.push({
-      from: a,
-      to: b,
-      type: type
-    });
-  }
-  return connections;
+// Get connection between two nodes
+function getConnection(nodeA, nodeB, seed) {
+  if (!nodeA || !nodeB) return null;
+  
+  // Check if nodes are adjacent chunks
+  const dx = Math.abs(nodeA.x - nodeB.x);
+  const dz = Math.abs(nodeA.z - nodeB.z);
+  if (dx > CHUNK_SIZE * 2 || dz > CHUNK_SIZE * 2) return null;
+  
+  const r = hash2(nodeA.x + nodeB.x, nodeA.z + nodeB.z, seed);
+  const type = r < 0.33 ? WALL_SLIT : (r < 0.66 ? WALL : PIT);
+  
+  return {
+    from: nodeA,
+    to: nodeB,
+    type: type
+  };
 }
 
-// Generate pits in the open space
-function generatePits() {
+// Get pits in a chunk
+function getPits(chunkX, chunkZ) {
   const pits = [];
-  const numPits = 3 + Math.floor(Math.random() * 8); // 3-10 pits
-  for (let i = 0; i < numPits; i++) {
-    const x = (Math.random() - 0.5) * 70;
-    const z = (Math.random() - 0.5) * 70;
-    pits.push({ x: Math.round(x / CELL), z: Math.round(z / CELL) });
+  const seed = mazeSeed + 777;
+  const h = hash2(chunkX, chunkZ, seed);
+  
+  // 30% chance of having pits in this chunk
+  if (h < 0.30) {
+    const numPits = 1 + Math.floor(hash2(chunkX+3, chunkZ+3, seed) * 4); // 1-4 pits
+    for (let i = 0; i < numPits; i++) {
+      const px = chunkX * CHUNK_SIZE + Math.floor(hash2(chunkX+i*7, chunkZ+i*11, seed) * CHUNK_SIZE);
+      const pz = chunkZ * CHUNK_SIZE + Math.floor(hash2(chunkX+i*13, chunkZ+i*17, seed) * CHUNK_SIZE);
+      pits.push({ x: px, z: pz });
+    }
   }
   return pits;
 }
 
-// Pre-compute the world data once per seed
-let worldNodes = [];
-let worldConnections = [];
-let worldPits = [];
-let worldGenerated = false;
-
-function generateWorld(seed) {
-  const oldSeed = mazeSeed;
-  mazeSeed = seed;
-  worldNodes = generateWallNodes();
-  worldConnections = generateConnections(worldNodes);
-  worldPits = generatePits();
-  worldGenerated = true;
-  mazeSeed = oldSeed;
-}
-
-function isPointInRect(px, pz, rect) {
-  return px >= rect.x && px < rect.x + rect.w &&
-         pz >= rect.z && pz < rect.z + rect.h;
+// Get all chunks within a radius
+function getChunksInRadius(cx, cz, radius) {
+  const chunks = [];
+  const startX = Math.floor((cx - radius) / CHUNK_SIZE);
+  const endX = Math.floor((cx + radius) / CHUNK_SIZE);
+  const startZ = Math.floor((cz - radius) / CHUNK_SIZE);
+  const endZ = Math.floor((cz + radius) / CHUNK_SIZE);
+  
+  for (let x = startX; x <= endX; x++) {
+    for (let z = startZ; z <= endZ; z++) {
+      chunks.push({ x, z });
+    }
+  }
+  return chunks;
 }
 
 function getCell(cx0,cz0){
@@ -601,45 +634,71 @@ function getCell(cx0,cz0){
   const cx = cx0 + roomOffsetX;
   const cz = cz0 + roomOffsetZ;
 
-  // Default: OPEN (empty world)
+  // Default: OPEN
   let type = OPEN;
 
-  // Check if inside a wall node
-  for (const node of worldNodes) {
-    if (isPointInRect(cx, cz, node)) {
+  // Find which chunk this cell is in
+  const chunkX = Math.floor(cx / CHUNK_SIZE);
+  const chunkZ = Math.floor(cz / CHUNK_SIZE);
+  
+  // Get wall node for this chunk
+  const node = getWallNode(chunkX, chunkZ);
+  if (node) {
+    // Check if cell is inside the wall node
+    if (cx >= node.x && cx < node.x + node.w &&
+        cz >= node.z && cz < node.z + node.h) {
       type = WALL;
-      break;
+      cell = {type};
+      cellCache.set(key,cell);
+      return cell;
     }
   }
 
-  // Check if on a connection line (only if not already a wall)
-  if (type !== WALL) {
-    for (const conn of worldConnections) {
-      const from = conn.from;
-      const to = conn.to;
-      
-      // Check if we're on the line between the two nodes
-      // Simple line check using Bresenham-like approximation
-      const dx = to.x - from.x;
-      const dz = to.z - from.z;
-      const dist = Math.round(Math.hypot(dx, dz));
-      
-      for (let t = 0; t <= dist; t++) {
-        const frac = t / dist;
-        const lx = Math.round(from.x + dx * frac);
-        const lz = Math.round(from.z + dz * frac);
-        if (cx === lx && cz === lz) {
-          type = conn.type;
-          break;
+  // Check connections from this chunk's node to neighboring nodes
+  if (!node) {
+    // Even if this chunk has no node, check connections from neighbors
+    const neighbors = [
+      [chunkX-1, chunkZ],
+      [chunkX+1, chunkZ],
+      [chunkX, chunkZ-1],
+      [chunkX, chunkZ+1],
+      [chunkX-1, chunkZ-1],
+      [chunkX+1, chunkZ+1],
+      [chunkX-1, chunkZ+1],
+      [chunkX+1, chunkZ-1]
+    ];
+    
+    for (const [nx, nz] of neighbors) {
+      const neighborNode = getWallNode(nx, nz);
+      if (neighborNode && node) {
+        const conn = getConnection(node, neighborNode, mazeSeed + 555);
+        if (conn) {
+          // Check if cell is on the line between nodes
+          const dx = neighborNode.x - node.x;
+          const dz = neighborNode.z - node.z;
+          const dist = Math.round(Math.hypot(dx, dz));
+          
+          for (let t = 0; t <= dist; t++) {
+            const frac = t / dist;
+            const lx = Math.round(node.x + dx * frac);
+            const lz = Math.round(node.z + dz * frac);
+            if (cx === lx && cz === lz) {
+              type = conn.type;
+              cell = {type};
+              cellCache.set(key,cell);
+              return cell;
+            }
+          }
         }
       }
-      if (type !== OPEN) break;
     }
   }
 
-  // Check if inside a pit (only if not already a wall)
+  // Check if cell is a pit
   if (type !== WALL) {
-    for (const pit of worldPits) {
+    const pitKey = chunkX + ',' + chunkZ;
+    const pits = getPits(chunkX, chunkZ);
+    for (const pit of pits) {
       if (cx === pit.x && cz === pit.z) {
         type = PIT;
         break;
@@ -662,24 +721,41 @@ function isBlockedForBot(x,z){
 }
 
 function refreshMazeMeshes(px,pz){
-  // Generate world if not done yet
-  if (!worldGenerated) {
-    generateWorld(mazeSeed);
-  }
+  log('🔄 Refreshing maze meshes at (' + px.toFixed(1) + ', ' + pz.toFixed(1) + ')');
+  const startTime = performance.now();
   
   const [pcx,pcz] = worldToCell(px,pz);
   const needed = new Set();
   const pitCache = new Map();
   
+  // Track chunks we've processed
+  let chunksProcessed = 0;
+  let nodesFound = 0;
+  let pitsFound = 0;
+  
+  // Check cells in view radius
   for(let dx=-VIEW_RADIUS; dx<=VIEW_RADIUS; dx++){
     for(let dz=-VIEW_RADIUS; dz<=VIEW_RADIUS; dz++){
       const cx=pcx+dx, cz=pcz+dz;
       const cell = getCell(cx,cz);
+      const key = cellKey(cx,cz);
+      const [wx,wz] = cellCenter(cx,cz);
+      
+      // Track chunk stats
+      const chunkX = Math.floor((cx + roomOffsetX) / CHUNK_SIZE);
+      const chunkZ = Math.floor((cz + roomOffsetZ) / CHUNK_SIZE);
+      chunksProcessed++;
+      
       if(cell.type === PIT) {
-        pitCache.set(cellKey(cx,cz), {cx, cz});
+        pitCache.set(key, {cx, cz});
+        pitsFound++;
+      } else if(cell.type === WALL || cell.type === WALL_SLIT) {
+        nodesFound++;
       }
     }
   }
+  
+  log('   📊 Processed ' + chunksProcessed + ' cells, found ' + nodesFound + ' wall cells, ' + pitsFound + ' pits');
   
   const skipWall = new Set();
   for(const [key, pos] of pitCache) {
@@ -697,6 +773,10 @@ function refreshMazeMeshes(px,pz){
     }
   }
 
+  // Create meshes
+  let meshesCreated = 0;
+  let meshesRemoved = 0;
+  
   for(let dx=-VIEW_RADIUS; dx<=VIEW_RADIUS; dx++){
     for(let dz=-VIEW_RADIUS; dz<=VIEW_RADIUS; dz++){
       const cx=pcx+dx, cz=pcz+dz;
@@ -710,6 +790,7 @@ function refreshMazeMeshes(px,pz){
           const mesh = new THREE.Mesh(sharedBoxGeo, wallMat);
           mesh.position.set(wx, WALL_HEIGHT/2, wz);
           scene.add(mesh); meshPool.set(key, mesh);
+          meshesCreated++;
         }
       } else if(cell.type===WALL_SLIT){
         needed.add(key);
@@ -717,6 +798,7 @@ function refreshMazeMeshes(px,pz){
           const mesh = new THREE.Mesh(slitBoxGeo, wallMat);
           mesh.position.set(wx, SLIT_GAP + (WALL_HEIGHT-SLIT_GAP)/2, wz);
           scene.add(mesh); meshPool.set(key, mesh);
+          meshesCreated++;
         }
         needed.add(key+'#f');
         if(!meshPool.has(key+'#f')){
@@ -779,18 +861,24 @@ function refreshMazeMeshes(px,pz){
           }
           
           meshPool.set(pitKey, {type:'pit'});
+          meshesCreated += 5; // floor + 4 walls
         }
       }
     }
   }
   
+  // Remove old meshes
   for(const [key,mesh] of meshPool){
     if(!needed.has(key) && !key.includes('#pit')){
       scene.remove(mesh);
       if(mesh.geometry!==sharedBoxGeo && mesh.geometry!==slitBoxGeo && mesh.geometry!==floorTileGeo && mesh.geometry!==pitWallPlaneGeo && mesh.geometry!==pitFloorGeo) mesh.geometry.dispose();
       meshPool.delete(key);
+      meshesRemoved++;
     }
   }
+  
+  const elapsed = performance.now() - startTime;
+  log('   ✅ Maze refresh complete: ' + meshesCreated + ' meshes created, ' + meshesRemoved + ' removed, ' + elapsed.toFixed(2) + 'ms');
 }
 
 // ============================================================
@@ -929,7 +1017,8 @@ function buildBotRuntime(bot){
     instance: null,
     imageLoaded: false,
     sounds: [],
-    music: []
+    music: [],
+    loadedImages: [] // Track all loaded images
   };
   return runtime;
 }
@@ -949,44 +1038,61 @@ function shuffledRoster(){
 
 async function loadBotAssets(runtime) {
   const botId = runtime.def.id;
+  log('🔍 Loading assets for: ' + botId);
   
-  // Get image URL from cache
-  const imageUrls = getFileUrls(botId);
-  if (imageUrls.length > 0) {
-    runtime.textureUrl = imageUrls[0];
-    
-    // Use THREE.TextureLoader for proper CORS handling
-    const loader = new THREE.TextureLoader();
-    loader.load(
-      imageUrls[0],
-      function(texture) {
+  // Use loadNumberedFiles approach - try botId1.*, botId2.*, etc.
+  const extensions = ['png', 'jpg', 'jpeg', 'webp'];
+  let loaded = false;
+  
+  for (let num = 1; num <= 10; num++) {
+    const baseName = botId + num;
+    const urls = getFileUrls(baseName);
+    if (urls.length > 0) {
+      const url = urls[0];
+      log('   📷 Trying to load image: ' + url);
+      
+      const loader = new THREE.TextureLoader();
+      try {
+        const texture = await new Promise((resolve, reject) => {
+          loader.load(
+            url,
+            (tex) => resolve(tex),
+            undefined,
+            (err) => reject(err)
+          );
+        });
         runtime.texture = texture;
         runtime.imageLoaded = true;
-        console.log(`✅ Texture loaded: ${imageUrls[0]}`);
-        
-        // Update sprite if it exists
-        if (runtime.instance && runtime.instance.sprite) {
-          runtime.instance.sprite.material.map = texture;
-          runtime.instance.sprite.material.needsUpdate = true;
-        }
-      },
-      undefined,
-      function(err) {
-        console.log(`❌ Texture failed: ${imageUrls[0]}`, err);
+        runtime.loadedImages.push(url);
+        logSuccess('   ✅ Texture loaded: ' + url);
+        loaded = true;
+        break;
+      } catch(err) {
+        logWarn('   ❌ Failed to load ' + url + ': ' + err.message);
       }
-    );
+    } else {
+      // No more numbered files
+      break;
+    }
   }
   
+  if (!loaded) {
+    logWarn('   ⚠️ No image found for ' + botId);
+  }
+  
+  // Load sounds
   const soundUrls = getFileUrls(botId + '_sound');
   runtime.sounds = soundUrls;
   if (soundUrls.length > 0) {
-    console.log(`✅ ${soundUrls.length} sound(s) found for ${botId}`);
+    logSuccess('   ✅ ' + soundUrls.length + ' sound(s) found for ' + botId + ': ' + soundUrls.join(', '));
+  } else {
+    logWarn('   ⚠️ No sounds found for ' + botId);
   }
   
   const musicUrls = getFileUrls(botId + '_music');
   runtime.music = musicUrls;
   if (musicUrls.length > 0) {
-    console.log(`✅ ${musicUrls.length} music track(s) found for ${botId}`);
+    logSuccess('   ✅ ' + musicUrls.length + ' music track(s) found for ' + botId + ': ' + musicUrls.join(', '));
   }
 }
 
@@ -1013,7 +1119,6 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   
   const [sx,sz] = findOpenSpawnPoint(px, pz, minDist, maxDist, preferDirection);
   
-  // Use loaded texture or placeholder
   let texture;
   if (runtime.texture) {
     texture = runtime.texture;
@@ -1029,7 +1134,7 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   const instance = { runtime, sprite, x:sx, z:sz };
   runtime.instance = instance;
   activeInstances.push(instance);
-  console.log(`👾 Spawned ${runtime.def.name} at (${sx.toFixed(1)}, ${sz.toFixed(1)})`);
+  log('👾 Spawned ' + runtime.def.name + ' at (' + sx.toFixed(1) + ', ' + sz.toFixed(1) + ')');
 }
 
 function clearBots(){
@@ -1038,11 +1143,13 @@ function clearBots(){
     inst.runtime.instance = null;
   });
   activeInstances = [];
+  log('🧹 All bots cleared');
 }
 
 function relocateBot(inst, px, pz){
   const [sx,sz] = findOpenSpawnPoint(px, pz, SPAWN_EDGE_MIN * 0.5, SPAWN_EDGE_MAX);
   inst.x = sx; inst.z = sz;
+  log('🔄 Relocated bot to (' + sx.toFixed(1) + ', ' + sz.toFixed(1) + ')');
 }
 
 function stepBot(inst, px, pz, dt, botSpeed){
@@ -1152,10 +1259,12 @@ function spawnPickup(type, px, pz){
   sprite.position.set(x, 0.8, z);
   scene.add(sprite);
   pickups.push({type, x, z, sprite, bobPhase: Math.random()*Math.PI*2});
+  log('🎯 Spawned ' + type + ' pickup at (' + x.toFixed(1) + ', ' + z.toFixed(1) + ')');
 }
 function clearPickups(){
   pickups.forEach(p=>scene.remove(p.sprite));
   pickups = [];
+  log('🧹 All pickups cleared');
 }
 
 // ============================================================
@@ -1238,19 +1347,19 @@ function setUsername(name) {
 
 function getHighScores() {
   const url = HIGHSCORE_API + '?action=getScores';
-  console.log('📊 Fetching high scores...');
+  log('📊 Fetching high scores...');
   return fetch(url)
     .then(r => {
-      console.log('📊 High scores response:', r.status);
+      log('📊 High scores response: ' + r.status);
       return r.json();
     })
     .then(data => {
-      console.log('📊 High scores data:', data);
+      log('📊 High scores data:', data);
       highScoresCache = data.data;
       return data.data;
     })
     .catch(err => {
-      console.error('❌ Failed to get high scores:', err);
+      logError('Failed to get high scores: ' + err.message);
       return { topTimes: [], topDistances: [] };
     });
 }
@@ -1268,18 +1377,18 @@ function submitHighScore(time, distance, killedBy) {
   };
   
   const url = HIGHSCORE_API + '?action=updateScore&data=' + encodeURIComponent(JSON.stringify(data));
-  console.log('📤 Submitting high score:', data);
+  log('📤 Submitting high score:', data);
   
   return fetch(url)
     .then(r => {
-      console.log('📤 Submit response:', r.status);
+      log('📤 Submit response: ' + r.status);
       return r.json();
     })
     .then(data => {
-      console.log('✅ High score submitted:', data);
+      logSuccess('High score submitted:', data);
     })
     .catch(err => {
-      console.error('❌ Failed to submit high score:', err);
+      logError('Failed to submit high score: ' + err.message);
     });
 }
 
@@ -1355,10 +1464,10 @@ let menuSource = null;
 function initAudio() {
   try {
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    console.log('🎵 Audio context initialized');
+    log('🎵 Audio context initialized');
     return true;
   } catch(e) {
-    console.log('❌ Audio context failed:', e.message);
+    logError('Audio context failed: ' + e.message);
     return false;
   }
 }
@@ -1369,25 +1478,11 @@ function playAmbience() {
     if (!audioCtx) return;
   }
   
-  // Try ambience1, ambience, etc.
-  let urls = getFileUrls('ambience');
-  if (urls.length === 0) {
-    // Try ambience1
-    urls = getFileUrls('ambience1');
-  }
-  if (urls.length === 0) {
-    // Try any file starting with ambience
-    for (const key of Object.keys(fileCache)) {
-      if (key.startsWith('ambience')) {
-        urls = getFileUrls(key);
-        break;
-      }
-    }
-  }
-  
+  // Use exact filename - ambience1.mp3
+  const urls = getFileUrls('ambience1');
   if (urls.length > 0) {
-    console.log('🎵 Found ambience files:', urls);
     const url = urls[0];
+    log('🎵 Found ambience file: ' + url);
     fetch(url)
       .then(r => r.arrayBuffer())
       .then(buffer => audioCtx.decodeAudioData(buffer))
@@ -1405,11 +1500,11 @@ function playAmbience() {
         ambienceSource.loop = true;
         ambienceSource.connect(ambienceGain);
         ambienceSource.start();
-        console.log('🎵 Ambience playing');
+        log('🎵 Ambience playing');
       })
-      .catch(err => console.log('❌ Ambience failed:', err.message));
+      .catch(err => logError('Ambience failed: ' + err.message));
   } else {
-    console.log('❌ No ambience files found');
+    logWarn('❌ No ambience file found');
   }
 }
 
@@ -1428,7 +1523,7 @@ function playMenuMusic() {
   
   const urls = getFileUrls('menu');
   if (urls.length > 0) {
-    console.log('🎵 Found menu music:', urls);
+    log('🎵 Found menu music:', urls);
     const url = urls[Math.floor(Math.random() * urls.length)];
     fetch(url)
       .then(r => r.arrayBuffer())
@@ -1447,9 +1542,9 @@ function playMenuMusic() {
         menuSource.loop = true;
         menuSource.connect(menuGain);
         menuSource.start();
-        console.log('🎵 Menu music playing');
+        log('🎵 Menu music playing');
       })
-      .catch(err => console.log('❌ Menu music failed:', err.message));
+      .catch(err => logError('Menu music failed: ' + err.message));
   }
 }
 
@@ -1470,7 +1565,7 @@ function playBotSound(botId, isJumpscare) {
   }
   
   const url = runtime.sounds[Math.floor(Math.random() * runtime.sounds.length)];
-  console.log('🔊 Playing sound:', url);
+  log('🔊 Playing sound: ' + url);
   
   fetch(url)
     .then(r => r.arrayBuffer())
@@ -1494,9 +1589,9 @@ function playBotSound(botId, isJumpscare) {
       gain.connect(audioCtx.destination);
       source.start();
       
-      console.log(isJumpscare ? '🔊 Jumpscare sound' : '🔊 Attack sound');
+      log(isJumpscare ? '🔊 Jumpscare sound' : '🔊 Attack sound');
     })
-    .catch(err => console.log('❌ Sound failed:', err.message));
+    .catch(err => logError('Sound failed: ' + err.message));
 }
 
 function generateBeep(isJumpscare) {
@@ -1543,7 +1638,7 @@ function showComic() {
   const img = document.getElementById('comicImage');
   const skipBtn = document.getElementById('comicSkip');
   
-  console.log('📖 Showing comic');
+  log('📖 Showing comic');
   screen.style.display = 'flex';
   
   img.className = '';
@@ -1554,9 +1649,11 @@ function showComic() {
   if (comicUrls.length > 0) {
     img.src = comicUrls[0];
     img.style.display = 'block';
+    log('📖 Comic URL: ' + comicUrls[0]);
   } else {
     img.style.display = 'none';
     skipBtn.classList.add('visible');
+    logWarn('No comic found');
   }
   
   requestAnimationFrame(() => {
@@ -1577,7 +1674,7 @@ function showComic() {
   screen.addEventListener('click', showSkip);
   
   skipBtn.addEventListener('click', () => {
-    console.log('📖 Comic skipped');
+    log('📖 Comic skipped');
     screen.style.display = 'none';
     document.getElementById('startScreen').style.display = 'flex';
     screen.removeEventListener('click', showSkip);
@@ -1587,6 +1684,7 @@ function showComic() {
     const titleUrls = getFileUrls('title');
     if (titleImg && titleUrls.length > 0) {
       titleImg.src = titleUrls[0];
+      log('📖 Title image: ' + titleUrls[0]);
     }
   });
 }
@@ -1601,6 +1699,7 @@ function hitDamageCur(){ return Math.min(HIT_DAMAGE*2.0, HIT_DAMAGE + elapsed*0.
 function expectedBotCountCur(){ return Math.floor(EXPECTED_BOT_COUNT_BASE + elapsed / 15 * EXPECTED_BOT_COUNT_GROWTH); }
 
 function resetGame(){
+  log('🔄 Resetting game...');
   clearBots(); clearPickups();
   
   const toRemove = [];
@@ -1612,7 +1711,6 @@ function resetGame(){
   }
   meshPool = new Map(); 
   cellCache = new Map();
-  worldGenerated = false;
   mazeSeed = Math.floor(Math.random()*99999)+1;
   roomOffsetX = Math.floor(Math.random()*30);
   roomOffsetZ = Math.floor(Math.random()*30);
@@ -1648,6 +1746,7 @@ function resetGame(){
   document.getElementById('toast').style.display = 'none';
   
   playAmbience();
+  log('✅ Game reset complete');
 }
 
 function registerAction(kind){
@@ -1661,10 +1760,14 @@ function registerAction(kind){
 function doJump(){
   if(state!=='playing') return;
   const inSlit = cellTypeAtWorld(px,pz) === WALL_SLIT;
-  if(inSlit) return;
+  if(inSlit) {
+    log('⛔ Jump blocked - inside slit');
+    return;
+  }
   if(!onGround && !wallrunning) return;
   vy = JUMP_VY; onGround=false; sliding=false; wallrunning=false;
   registerAction('jump');
+  log('🦘 Jump');
 }
 
 function doSlide(){
@@ -1673,6 +1776,7 @@ function doSlide(){
   sliding = true;
   slideSpeed = currentSpeed() + SLIDE_ENTRY_BOOST;
   registerAction('slide');
+  log('🛝 Slide');
 }
 
 // ============================================================
@@ -1687,7 +1791,7 @@ if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
   isMobile = true;
   const hint = document.getElementById('lockHint');
   if (hint) hint.style.display = 'none';
-  console.log('📱 Mobile mode detected');
+  log('📱 Mobile mode detected');
 }
 
 function pointerStart(x,y){ pointerDown=true; startX=x; lastPX=x; lastPY=y; vTrackY=y; vTrackTime=performance.now(); turnInput=0; }
@@ -1856,11 +1960,13 @@ function updateChoiceUI(now){
   });
 
   if(timeLeft<=0 && choiceActive){
+    log('⏰ Choice timer expired, auto-picking middle option');
     choiceActive = false;
     const mid = currentChoicePicks[1] || currentChoicePicks[0];
     if(mid) {
       finalizeChoice(mid);
     } else {
+      logError('No middle option available, closing screen');
       document.getElementById('powerupScreen').style.display = 'none';
       timeScale = 1;
       setBotAudioSlow(false);
@@ -1870,6 +1976,7 @@ function updateChoiceUI(now){
 }
 
 function offerUpgrades(){
+  log('🎁 Offering upgrades');
   state = 'choosing';
   timeScale = 0.05;
   setBotAudioSlow(true);
@@ -1892,6 +1999,7 @@ function offerUpgrades(){
     wrap.appendChild(btn);
   });
   document.getElementById('powerupScreen').style.display = 'flex';
+  log('🎁 Upgrades displayed: ' + picks.map(u => u.label).join(', '));
   
   if(document.pointerLockElement) {
     document.exitPointerLock();
@@ -1900,6 +2008,7 @@ function offerUpgrades(){
 
 function finalizeChoice(u){
   if(!choiceActive) return;
+  log('🎯 Chose upgrade: ' + u.label);
   choiceActive = false;
   u.apply();
   upgradeStacks[u.id] = (upgradeStacks[u.id]||0)+1;
@@ -1932,6 +2041,7 @@ function hitPlayer(runtime){
   hitCooldown = HIT_COOLDOWN;
   const dmg = hitDamageCur() * dmgResistMult;
   health -= dmg;
+  log('💥 Player hit by ' + runtime.def.name + ', damage: ' + dmg.toFixed(1) + ', health: ' + health);
   
   playBotSound(runtime.def.id, false);
   
@@ -2041,6 +2151,7 @@ function update(dt){
     if(botRespawnTimer > BOT_RESPAWN_DELAY) {
       botRespawnTimer = 0;
       const missing = targetCount - activeInstances.length;
+      log('🔄 Respawning ' + missing + ' missing bots');
       for(let i = 0; i < Math.min(missing, 3); i++) {
         if(spawnQueue.length) {
           const spawnDir = Math.atan2(0, -1) + (Math.random() - 0.5) * 2;
@@ -2077,6 +2188,7 @@ function update(dt){
         const healAmount = HEAL_BASE + healBonusCur;
         health = Math.min(HEALTH_MAX, health + healAmount); 
         healFlash = 1.0;
+        log('💚 Healed +' + healAmount + ' HP');
         showToast('+' + Math.round(healAmount) + ' HP');
       } else { 
         offerUpgrades(); 
@@ -2166,6 +2278,7 @@ function dieByBot(runtime, message){
   if(state!=='playing') return;
   state = 'dead';
   const mySeq = ++deathSeq;
+  log('💀 Player died, killed by: ' + (runtime ? runtime.def.name : message));
 
   if (runtime) {
     killedBy = runtime.def.name;
@@ -2177,11 +2290,11 @@ function dieByBot(runtime, message){
   const js = document.getElementById('jumpscare');
   js.className = '';
   if(!message && runtime && runtime.texture){
-    // If we have a loaded texture, use its image
     const img = runtime.texture.image;
     if (img) {
       js.style.backgroundImage = `url(${img.src})`;
       js.style.backgroundColor = 'transparent';
+      log('💀 Jumpscare image: ' + img.src);
     } else {
       js.className = 'fallback';
       js.style.backgroundImage = 'none';
@@ -2247,6 +2360,7 @@ document.getElementById('usernameConfirm').addEventListener('click', ()=>{
   if (name.length > 0) {
     setUsername(name);
     document.getElementById('usernamePrompt').style.display = 'none';
+    log('👤 Username set: ' + name);
     
     if (window._pendingScore) {
       submitHighScore(
@@ -2264,6 +2378,7 @@ document.getElementById('usernameSkip').addEventListener('click', ()=>{
   document.getElementById('usernamePrompt').style.display = 'none';
   window._pendingScore = null;
   document.getElementById('gameOverScreen').style.display = 'flex';
+  log('👤 Username skipped');
 });
 
 document.getElementById('usernameInput').addEventListener('keydown', (e)=>{
@@ -2280,6 +2395,7 @@ document.getElementById('startBtn').addEventListener('click', ()=>{
     initAudio();
   }
   startGame();
+  log('🎮 Start button clicked');
 });
 
 function startGame() {
@@ -2289,32 +2405,32 @@ function startGame() {
   document.getElementById('usernamePrompt').style.display = 'none';
   resetGame();
   state = 'playing';
-  console.log('🎮 Game started');
+  log('🎮 Game started');
 }
 
 document.getElementById('retryBtn').addEventListener('click', ()=>{
   document.getElementById('gameOverScreen').style.display = 'none';
   resetGame();
   state = 'playing';
-  console.log('🔄 Game restarted');
+  log('🔄 Game restarted');
 });
 
 // ============================================================
 // LOAD BOT ASSETS ON STARTUP
 // ============================================================
 async function loadAllBotAssets() {
-  console.log('📦 Loading bot assets...');
+  log('📦 Loading bot assets...');
   for (const runtime of botRuntimes) {
     await loadBotAssets(runtime);
   }
-  console.log('✅ All bot assets loaded');
+  logSuccess('✅ All bot assets loaded');
 }
 
 // ============================================================
 // INITIALIZATION
 // ============================================================
 async function init() {
-  console.log('🚀 Initializing game v' + VERSION);
+  log('🚀 Initializing game v' + VERSION);
   
   await scanGitHubFiles();
   
@@ -2323,7 +2439,7 @@ async function init() {
   if (!comicShown) {
     comicShown = true;
     document.getElementById('startScreen').style.display = 'none';
-    console.log('📖 Showing comic first');
+    log('📖 Showing comic first');
     setTimeout(() => {
       showComic();
     }, 300);
@@ -2334,7 +2450,7 @@ async function init() {
   resetGame();
   requestAnimationFrame(tick);
   
-  console.log('✅ Game initialization complete');
+  logSuccess('✅ Game initialization complete');
 }
 
 init();
