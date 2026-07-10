@@ -228,8 +228,8 @@
 <!-- Start Screen -->
 <div id="startScreen">
   <h1>
-    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.1.0</span>';">
-    <span class="version-tag">v1.1.0</span>
+    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.1.1</span>';">
+    <span class="version-tag">v1.1.1</span>
   </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
@@ -277,7 +277,7 @@
 // ============================================================
 // VERSION
 // ============================================================
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.1.1';
 
 // ============================================================
 // CONFIGURATION
@@ -331,21 +331,10 @@ const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbw1TSJCYskcAjAhL2
 // ============================================================
 // LOGGING
 // ============================================================
-function log(msg) {
-  console.log(msg);
-}
-
-function logError(msg) {
-  console.error('❌ ' + msg);
-}
-
-function logSuccess(msg) {
-  console.log('✅ ' + msg);
-}
-
-function logWarn(msg) {
-  console.warn('⚠️ ' + msg);
-}
+function log(msg) { console.log(msg); }
+function logError(msg) { console.error('❌ ' + msg); }
+function logSuccess(msg) { console.log('✅ ' + msg); }
+function logWarn(msg) { console.warn('⚠️ ' + msg); }
 
 // ============================================================
 // FILE CACHE - GitHub API
@@ -531,10 +520,10 @@ function floorDiv(a,b){ return Math.floor(a/b); }
 function mod(a,b){ return ((a%b)+b)%b; }
 
 // ============================================================
-// INFINITE WALL GENERATION - Hash-based on-demand
+// INFINITE WALL GENERATION
 // ============================================================
 const WALL=0, OPEN=1, PIT=2, WALL_SLIT=3;
-const CHUNK_SIZE = 8; // Cells per chunk
+const CHUNK_SIZE = 8;
 let mazeSeed = 1;
 let roomOffsetX = 0, roomOffsetZ = 0;
 let cellCache = new Map();
@@ -545,18 +534,14 @@ const floorTileGeo = new THREE.PlaneGeometry(CELL, CELL);
 
 function cellKey(cx,cz){ return cx+','+cz; }
 
-// Get wall node for a chunk
 function getWallNode(chunkX, chunkZ) {
   const seed = mazeSeed + 999;
   const h = hash2(chunkX, chunkZ, seed);
-  
-  // 40% chance of having a wall node in this chunk
   if (h < 0.40) {
-    const sizeW = 3 + Math.floor(hash2(chunkX+1, chunkZ, seed) * 8); // 3-10 cells wide
-    const sizeH = 3 + Math.floor(hash2(chunkX, chunkZ+1, seed) * 8); // 3-10 cells tall
+    const sizeW = 3 + Math.floor(hash2(chunkX+1, chunkZ, seed) * 8);
+    const sizeH = 3 + Math.floor(hash2(chunkX, chunkZ+1, seed) * 8);
     const offsetX = Math.floor(hash2(chunkX+2, chunkZ, seed) * (CHUNK_SIZE - sizeW));
     const offsetZ = Math.floor(hash2(chunkX, chunkZ+2, seed) * (CHUNK_SIZE - sizeH));
-    
     return {
       x: chunkX * CHUNK_SIZE + offsetX,
       z: chunkZ * CHUNK_SIZE + offsetZ,
@@ -567,57 +552,36 @@ function getWallNode(chunkX, chunkZ) {
   return null;
 }
 
-// Get connection between two nodes
-function getConnection(nodeA, nodeB, seed) {
-  if (!nodeA || !nodeB) return null;
-  
-  // Check if nodes are adjacent chunks
-  const dx = Math.abs(nodeA.x - nodeB.x);
-  const dz = Math.abs(nodeA.z - nodeB.z);
-  if (dx > CHUNK_SIZE * 2 || dz > CHUNK_SIZE * 2) return null;
-  
-  const r = hash2(nodeA.x + nodeB.x, nodeA.z + nodeB.z, seed);
-  const type = r < 0.33 ? WALL_SLIT : (r < 0.66 ? WALL : PIT);
-  
-  return {
-    from: nodeA,
-    to: nodeB,
-    type: type
-  };
+// Connection types: 0=WALL, 1=PIT, 2=WALL_SLIT, 3=MIXED
+function getConnectionType(chunkX, chunkZ, seed) {
+  const r = hash2(chunkX*13 + chunkZ*7, chunkZ*13 + chunkX*7, seed);
+  return Math.floor(r * 4); // 0-3
 }
 
-// Get pits in a chunk
-function getPits(chunkX, chunkZ) {
-  const pits = [];
-  const seed = mazeSeed + 777;
-  const h = hash2(chunkX, chunkZ, seed);
-  
-  // 30% chance of having pits in this chunk
-  if (h < 0.30) {
-    const numPits = 1 + Math.floor(hash2(chunkX+3, chunkZ+3, seed) * 4); // 1-4 pits
-    for (let i = 0; i < numPits; i++) {
-      const px = chunkX * CHUNK_SIZE + Math.floor(hash2(chunkX+i*7, chunkZ+i*11, seed) * CHUNK_SIZE);
-      const pz = chunkZ * CHUNK_SIZE + Math.floor(hash2(chunkX+i*13, chunkZ+i*17, seed) * CHUNK_SIZE);
-      pits.push({ x: px, z: pz });
-    }
-  }
-  return pits;
+function getMixedType(cellX, cellZ, seed) {
+  const r = hash2(cellX*17 + cellZ*11, cellZ*17 + cellX*11, seed);
+  if (r < 0.75) return WALL;
+  return (r < 0.875) ? PIT : WALL_SLIT;
 }
 
-// Get all chunks within a radius
-function getChunksInRadius(cx, cz, radius) {
-  const chunks = [];
-  const startX = Math.floor((cx - radius) / CHUNK_SIZE);
-  const endX = Math.floor((cx + radius) / CHUNK_SIZE);
-  const startZ = Math.floor((cz - radius) / CHUNK_SIZE);
-  const endZ = Math.floor((cz + radius) / CHUNK_SIZE);
+function drawConnectionLine(cx, cz, from, to, connType, seed) {
+  const dx = to.x - from.x;
+  const dz = to.z - from.z;
+  const dist = Math.round(Math.hypot(dx, dz));
+  if (dist === 0) return false;
   
-  for (let x = startX; x <= endX; x++) {
-    for (let z = startZ; z <= endZ; z++) {
-      chunks.push({ x, z });
+  for (let t = 0; t <= dist; t++) {
+    const frac = t / dist;
+    const lx = Math.round(from.x + dx * frac);
+    const lz = Math.round(from.z + dz * frac);
+    if (cx === lx && cz === lz) {
+      if (connType === 0) return WALL;
+      if (connType === 1) return PIT;
+      if (connType === 2) return WALL_SLIT;
+      if (connType === 3) return getMixedType(cx, cz, seed + 777);
     }
   }
-  return chunks;
+  return null;
 }
 
 function getCell(cx0,cz0){
@@ -634,17 +598,14 @@ function getCell(cx0,cz0){
   const cx = cx0 + roomOffsetX;
   const cz = cz0 + roomOffsetZ;
 
-  // Default: OPEN
   let type = OPEN;
 
-  // Find which chunk this cell is in
   const chunkX = Math.floor(cx / CHUNK_SIZE);
   const chunkZ = Math.floor(cz / CHUNK_SIZE);
   
-  // Get wall node for this chunk
+  // Check if inside a wall node
   const node = getWallNode(chunkX, chunkZ);
   if (node) {
-    // Check if cell is inside the wall node
     if (cx >= node.x && cx < node.x + node.w &&
         cz >= node.z && cz < node.z + node.h) {
       type = WALL;
@@ -654,49 +615,34 @@ function getCell(cx0,cz0){
     }
   }
 
-  // Check connections from this chunk's node to neighboring nodes
-  if (!node) {
-    // Even if this chunk has no node, check connections from neighbors
-    const neighbors = [
-      [chunkX-1, chunkZ],
-      [chunkX+1, chunkZ],
-      [chunkX, chunkZ-1],
-      [chunkX, chunkZ+1],
-      [chunkX-1, chunkZ-1],
-      [chunkX+1, chunkZ+1],
-      [chunkX-1, chunkZ+1],
-      [chunkX+1, chunkZ-1]
-    ];
-    
-    for (const [nx, nz] of neighbors) {
-      const neighborNode = getWallNode(nx, nz);
-      if (neighborNode && node) {
-        const conn = getConnection(node, neighborNode, mazeSeed + 555);
-        if (conn) {
-          // Check if cell is on the line between nodes
-          const dx = neighborNode.x - node.x;
-          const dz = neighborNode.z - node.z;
-          const dist = Math.round(Math.hypot(dx, dz));
-          
-          for (let t = 0; t <= dist; t++) {
-            const frac = t / dist;
-            const lx = Math.round(node.x + dx * frac);
-            const lz = Math.round(node.z + dz * frac);
-            if (cx === lx && cz === lz) {
-              type = conn.type;
-              cell = {type};
-              cellCache.set(key,cell);
-              return cell;
-            }
-          }
-        }
+  // Check connections from this chunk's node to neighbors
+  const neighbors = [
+    [chunkX-1, chunkZ],
+    [chunkX+1, chunkZ],
+    [chunkX, chunkZ-1],
+    [chunkX, chunkZ+1],
+    [chunkX-1, chunkZ-1],
+    [chunkX+1, chunkZ+1],
+    [chunkX-1, chunkZ+1],
+    [chunkX+1, chunkZ-1]
+  ];
+  
+  for (const [nx, nz] of neighbors) {
+    const neighborNode = getWallNode(nx, nz);
+    if (neighborNode && node) {
+      const connType = getConnectionType(chunkX, chunkZ, mazeSeed + 555);
+      const result = drawConnectionLine(cx, cz, node, neighborNode, connType, mazeSeed + 666);
+      if (result !== null) {
+        type = result;
+        cell = {type};
+        cellCache.set(key,cell);
+        return cell;
       }
     }
   }
 
   // Check if cell is a pit
   if (type !== WALL) {
-    const pitKey = chunkX + ',' + chunkZ;
     const pits = getPits(chunkX, chunkZ);
     for (const pit of pits) {
       if (cx === pit.x && cz === pit.z) {
@@ -709,6 +655,21 @@ function getCell(cx0,cz0){
   cell = {type};
   cellCache.set(key,cell);
   return cell;
+}
+
+function getPits(chunkX, chunkZ) {
+  const pits = [];
+  const seed = mazeSeed + 777;
+  const h = hash2(chunkX, chunkZ, seed);
+  if (h < 0.30) {
+    const numPits = 1 + Math.floor(hash2(chunkX+3, chunkZ+3, seed) * 4);
+    for (let i = 0; i < numPits; i++) {
+      const px = chunkX * CHUNK_SIZE + Math.floor(hash2(chunkX+i*7, chunkZ+i*11, seed) * CHUNK_SIZE);
+      const pz = chunkZ * CHUNK_SIZE + Math.floor(hash2(chunkX+i*13, chunkZ+i*17, seed) * CHUNK_SIZE);
+      pits.push({ x: px, z: pz });
+    }
+  }
+  return pits;
 }
 
 function worldToCell(x,z){ return [Math.round(x/CELL), Math.round(z/CELL)]; }
@@ -728,12 +689,10 @@ function refreshMazeMeshes(px,pz){
   const needed = new Set();
   const pitCache = new Map();
   
-  // Track chunks we've processed
   let chunksProcessed = 0;
   let nodesFound = 0;
   let pitsFound = 0;
   
-  // Check cells in view radius
   for(let dx=-VIEW_RADIUS; dx<=VIEW_RADIUS; dx++){
     for(let dz=-VIEW_RADIUS; dz<=VIEW_RADIUS; dz++){
       const cx=pcx+dx, cz=pcz+dz;
@@ -741,7 +700,6 @@ function refreshMazeMeshes(px,pz){
       const key = cellKey(cx,cz);
       const [wx,wz] = cellCenter(cx,cz);
       
-      // Track chunk stats
       const chunkX = Math.floor((cx + roomOffsetX) / CHUNK_SIZE);
       const chunkZ = Math.floor((cz + roomOffsetZ) / CHUNK_SIZE);
       chunksProcessed++;
@@ -773,7 +731,6 @@ function refreshMazeMeshes(px,pz){
     }
   }
 
-  // Create meshes
   let meshesCreated = 0;
   let meshesRemoved = 0;
   
@@ -861,13 +818,12 @@ function refreshMazeMeshes(px,pz){
           }
           
           meshPool.set(pitKey, {type:'pit'});
-          meshesCreated += 5; // floor + 4 walls
+          meshesCreated += 5;
         }
       }
     }
   }
   
-  // Remove old meshes
   for(const [key,mesh] of meshPool){
     if(!needed.has(key) && !key.includes('#pit')){
       scene.remove(mesh);
@@ -1018,7 +974,7 @@ function buildBotRuntime(bot){
     imageLoaded: false,
     sounds: [],
     music: [],
-    loadedImages: [] // Track all loaded images
+    loadedImages: []
   };
   return runtime;
 }
@@ -1040,8 +996,8 @@ async function loadBotAssets(runtime) {
   const botId = runtime.def.id;
   log('🔍 Loading assets for: ' + botId);
   
-  // Use loadNumberedFiles approach - try botId1.*, botId2.*, etc.
-  const extensions = ['png', 'jpg', 'jpeg', 'webp'];
+  // Images: botId1.*, botId2.*, etc.
+  const imageExts = ['png', 'jpg', 'jpeg', 'webp'];
   let loaded = false;
   
   for (let num = 1; num <= 10; num++) {
@@ -1071,7 +1027,6 @@ async function loadBotAssets(runtime) {
         logWarn('   ❌ Failed to load ' + url + ': ' + err.message);
       }
     } else {
-      // No more numbered files
       break;
     }
   }
@@ -1080,19 +1035,38 @@ async function loadBotAssets(runtime) {
     logWarn('   ⚠️ No image found for ' + botId);
   }
   
-  // Load sounds
-  const soundUrls = getFileUrls(botId + '_sound');
-  runtime.sounds = soundUrls;
-  if (soundUrls.length > 0) {
-    logSuccess('   ✅ ' + soundUrls.length + ' sound(s) found for ' + botId + ': ' + soundUrls.join(', '));
-  } else {
+  // Sounds: botId_sound1.*, botId_sound2.*, etc.
+  let soundFound = false;
+  for (let num = 1; num <= 10; num++) {
+    const baseName = botId + '_sound' + num;
+    const urls = getFileUrls(baseName);
+    if (urls.length > 0) {
+      runtime.sounds.push(urls[0]);
+      soundFound = true;
+      log('   🔊 Found sound: ' + urls[0]);
+    } else {
+      break;
+    }
+  }
+  if (!soundFound) {
     logWarn('   ⚠️ No sounds found for ' + botId);
   }
   
-  const musicUrls = getFileUrls(botId + '_music');
-  runtime.music = musicUrls;
-  if (musicUrls.length > 0) {
-    logSuccess('   ✅ ' + musicUrls.length + ' music track(s) found for ' + botId + ': ' + musicUrls.join(', '));
+  // Music: botId_music1.*, botId_music2.*, etc.
+  let musicFound = false;
+  for (let num = 1; num <= 10; num++) {
+    const baseName = botId + '_music' + num;
+    const urls = getFileUrls(baseName);
+    if (urls.length > 0) {
+      runtime.music.push(urls[0]);
+      musicFound = true;
+      log('   🎵 Found music: ' + urls[0]);
+    } else {
+      break;
+    }
+  }
+  if (!musicFound) {
+    logWarn('   ⚠️ No music found for ' + botId);
   }
 }
 
@@ -1478,32 +1452,39 @@ function playAmbience() {
     if (!audioCtx) return;
   }
   
-  // Use exact filename - ambience1.mp3
-  const urls = getFileUrls('ambience1');
-  if (urls.length > 0) {
-    const url = urls[0];
-    log('🎵 Found ambience file: ' + url);
-    fetch(url)
-      .then(r => r.arrayBuffer())
-      .then(buffer => audioCtx.decodeAudioData(buffer))
-      .then(decoded => {
-        if (ambienceSource) {
-          ambienceSource.stop();
-        }
-        
-        ambienceGain = audioCtx.createGain();
-        ambienceGain.gain.value = 0.3;
-        ambienceGain.connect(audioCtx.destination);
-        
-        ambienceSource = audioCtx.createBufferSource();
-        ambienceSource.buffer = decoded;
-        ambienceSource.loop = true;
-        ambienceSource.connect(ambienceGain);
-        ambienceSource.start();
-        log('🎵 Ambience playing');
-      })
-      .catch(err => logError('Ambience failed: ' + err.message));
-  } else {
+  // Try ambience1.*, ambience2.*, etc.
+  let found = false;
+  for (let num = 1; num <= 5; num++) {
+    const baseName = 'ambience' + num;
+    const urls = getFileUrls(baseName);
+    if (urls.length > 0) {
+      const url = urls[0];
+      log('🎵 Found ambience file: ' + url);
+      fetch(url)
+        .then(r => r.arrayBuffer())
+        .then(buffer => audioCtx.decodeAudioData(buffer))
+        .then(decoded => {
+          if (ambienceSource) {
+            ambienceSource.stop();
+          }
+          
+          ambienceGain = audioCtx.createGain();
+          ambienceGain.gain.value = 0.3;
+          ambienceGain.connect(audioCtx.destination);
+          
+          ambienceSource = audioCtx.createBufferSource();
+          ambienceSource.buffer = decoded;
+          ambienceSource.loop = true;
+          ambienceSource.connect(ambienceGain);
+          ambienceSource.start();
+          log('🎵 Ambience playing');
+        })
+        .catch(err => logError('Ambience failed: ' + err.message));
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
     logWarn('❌ No ambience file found');
   }
 }
@@ -1521,30 +1502,40 @@ function playMenuMusic() {
     if (!audioCtx) return;
   }
   
-  const urls = getFileUrls('menu');
-  if (urls.length > 0) {
-    log('🎵 Found menu music:', urls);
-    const url = urls[Math.floor(Math.random() * urls.length)];
-    fetch(url)
-      .then(r => r.arrayBuffer())
-      .then(buffer => audioCtx.decodeAudioData(buffer))
-      .then(decoded => {
-        if (menuSource) {
-          menuSource.stop();
-        }
-        
-        menuGain = audioCtx.createGain();
-        menuGain.gain.value = 0.2;
-        menuGain.connect(audioCtx.destination);
-        
-        menuSource = audioCtx.createBufferSource();
-        menuSource.buffer = decoded;
-        menuSource.loop = true;
-        menuSource.connect(menuGain);
-        menuSource.start();
-        log('🎵 Menu music playing');
-      })
-      .catch(err => logError('Menu music failed: ' + err.message));
+  // Try menu1.*, menu2.*, etc.
+  let found = false;
+  for (let num = 1; num <= 10; num++) {
+    const baseName = 'menu' + num;
+    const urls = getFileUrls(baseName);
+    if (urls.length > 0) {
+      const url = urls[0];
+      log('🎵 Found menu music: ' + url);
+      fetch(url)
+        .then(r => r.arrayBuffer())
+        .then(buffer => audioCtx.decodeAudioData(buffer))
+        .then(decoded => {
+          if (menuSource) {
+            menuSource.stop();
+          }
+          
+          menuGain = audioCtx.createGain();
+          menuGain.gain.value = 0.2;
+          menuGain.connect(audioCtx.destination);
+          
+          menuSource = audioCtx.createBufferSource();
+          menuSource.buffer = decoded;
+          menuSource.loop = true;
+          menuSource.connect(menuGain);
+          menuSource.start();
+          log('🎵 Menu music playing');
+        })
+        .catch(err => logError('Menu music failed: ' + err.message));
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    logWarn('❌ No menu music found');
   }
 }
 
