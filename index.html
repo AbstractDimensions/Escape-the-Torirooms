@@ -308,7 +308,6 @@ const MAGNET_RADIUS = 9;
 const MAGNET_SPEED  = 8;
 const HEAL_SPAWN_INTERVAL  = 16;
 const POWER_SPAWN_INTERVAL = 32;
-const TELEPORT_SPAWN_INTERVAL = 48; // 2x rarer than healing
 const SPAWN_EDGE_MIN = (VIEW_RADIUS-1)*CELL;
 const SPAWN_EDGE_MAX = VIEW_RADIUS*CELL;
 const BOT_FAR_THRESHOLD = (VIEW_RADIUS+4)*CELL;
@@ -321,9 +320,8 @@ const BOB_FREQ       = 1.7;
 const EXPECTED_BOT_COUNT_BASE = 3;
 const EXPECTED_BOT_COUNT_GROWTH = 1;
 const BOT_RESPAWN_DELAY = 5;
-const TELEPORT_RADIUS_MIN = 60; // cells
-const TELEPORT_RADIUS_MAX = 90; // cells
-const STATIONARY_THRESHOLD = 3.0; // seconds before teleport spawn rate increases
+const TELEPORT_RADIUS_MIN = 60;
+const TELEPORT_RADIUS_MAX = 90;
 
 // HIGH SCORES API
 const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbz6euP5HUwJqhLb0eXHxtnFPyCyzWd75i9MmAKpXaUdsvWhdXj5l1rsrjI0l663gutK/exec';
@@ -499,105 +497,107 @@ bigCeil.position.y = WALL_HEIGHT;
 scene.add(bigCeil);
 
 // ============================================================
-// CEILING LIGHTS
+// CEILING LIGHTS - PLANES AT y = WALL_HEIGHT - 0.001
 // ============================================================
-const lightTex = makeCanvasTexture((ctx,s)=>{
-  const grad = ctx.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
-  grad.addColorStop(0, 'rgba(255,245,220,1)');
-  grad.addColorStop(0.3, 'rgba(255,235,200,0.8)');
-  grad.addColorStop(0.7, 'rgba(200,180,150,0.3)');
-  grad.addColorStop(1, 'rgba(100,90,70,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,s,s);
-}, 64);
-
-const lightOffTex = makeCanvasTexture((ctx,s)=>{
-  ctx.fillStyle = '#1a1a1a';
-  ctx.fillRect(0,0,s,s);
-  ctx.strokeStyle = '#222';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(4,4,s-8,s-8);
-}, 64);
-
-const lightFlickerTex = makeCanvasTexture((ctx,s)=>{
-  const grad = ctx.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
-  grad.addColorStop(0, 'rgba(255,240,210,0.8)');
-  grad.addColorStop(0.3, 'rgba(255,220,180,0.5)');
-  grad.addColorStop(0.7, 'rgba(200,180,150,0.2)');
-  grad.addColorStop(1, 'rgba(100,90,70,0)');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0,0,s,s);
-  // Add some noise for flicker
-  for(let i=0;i<100;i++){
-    const x = Math.random()*s;
-    const y = Math.random()*s;
-    const a = Math.random()*0.3;
-    ctx.fillStyle = `rgba(255,255,255,${a})`;
-    ctx.fillRect(x,y,2,2);
-  }
-}, 64);
+const lightGeo = new THREE.PlaneGeometry(CELL * 0.6, CELL * 0.6);
+const lightOnMat = new THREE.MeshBasicMaterial({
+  color: 0xffeedd,
+  transparent: true,
+  opacity: 0.3
+});
+const lightOffMat = new THREE.MeshBasicMaterial({
+  color: 0x111111,
+  transparent: true,
+  opacity: 0.8
+});
+const lightFlickerMat = new THREE.MeshBasicMaterial({
+  color: 0xffeecc,
+  transparent: true,
+  opacity: 0.2
+});
 
 let lightMeshes = [];
+let lightChunkCache = new Map();
 
-function generateCeilingLights() {
-  // Clear old lights
-  lightMeshes.forEach(m => scene.remove(m));
-  lightMeshes = [];
+function generateLightsForChunk(chunkX, chunkZ) {
+  const key = chunkX + ',' + chunkZ;
+  if (lightChunkCache.has(key)) return;
   
-  const lightMat = new THREE.SpriteMaterial({map: lightTex, transparent: true, opacity: 0.7});
-  const lightOffMat = new THREE.SpriteMaterial({map: lightOffTex, transparent: true, opacity: 0.8});
-  const lightFlickerMat = new THREE.SpriteMaterial({map: lightFlickerTex, transparent: true, opacity: 0.6});
+  const cx = chunkX * CHUNK_SIZE;
+  const cz = chunkZ * CHUNK_SIZE;
   
-  // Generate lights in a grid pattern
-  const lightSpacing = CELL;
-  const range = VIEW_RADIUS * CELL;
-  
-  for (let x = -range; x <= range; x += lightSpacing) {
-    for (let z = -range; z <= range; z += lightSpacing) {
-      // Check if there's a wall at this position (we don't want lights in walls)
-      const cellType = cellTypeAtWorld(x, z);
+  for (let dx = 0; dx < CHUNK_SIZE; dx++) {
+    for (let dz = 0; dz < CHUNK_SIZE; dz++) {
+      const worldX = (cx + dx) * CELL;
+      const worldZ = (cz + dz) * CELL;
+      
+      // Check if there's a wall at this position
+      const cellType = cellTypeAtWorld(worldX, worldZ);
       if (cellType === WALL || cellType === WALL_SLIT) continue;
       
-      // Random chance for light
-      const h = hash2(Math.round(x/CELL), Math.round(z/CELL), 888);
+      const h = hash2(cx + dx, cz + dz, 888);
       
       // 2% chance burnt out
       if (h < 0.02) {
-        const sprite = new THREE.Sprite(lightOffMat.clone());
-        sprite.position.set(x, WALL_HEIGHT - 0.3, z);
-        sprite.scale.set(0.8, 0.8, 1);
-        scene.add(sprite);
-        lightMeshes.push(sprite);
+        const mesh = new THREE.Mesh(lightGeo, lightOffMat.clone());
+        mesh.position.set(worldX, WALL_HEIGHT - 0.001, worldZ);
+        mesh.rotation.x = -Math.PI / 2;
+        scene.add(mesh);
+        lightMeshes.push(mesh);
         continue;
       }
       
       // 5% chance flickering
       if (h < 0.07) {
-        const sprite = new THREE.Sprite(lightFlickerMat.clone());
-        sprite.position.set(x, WALL_HEIGHT - 0.3, z);
-        sprite.scale.set(0.8, 0.8, 1);
-        sprite.userData = {
+        const mat = lightFlickerMat.clone();
+        const mesh = new THREE.Mesh(lightGeo, mat);
+        mesh.position.set(worldX, WALL_HEIGHT - 0.001, worldZ);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.userData = {
           flicker: true,
           phase: Math.random() * Math.PI * 2,
-          baseOpacity: 0.4 + Math.random() * 0.4
+          baseOpacity: 0.2 + Math.random() * 0.3
         };
-        scene.add(sprite);
-        lightMeshes.push(sprite);
+        scene.add(mesh);
+        lightMeshes.push(mesh);
         continue;
       }
       
       // Normal light
       if (h < 0.5) {
-        const sprite = new THREE.Sprite(lightMat.clone());
-        sprite.position.set(x, WALL_HEIGHT - 0.3, z);
-        sprite.scale.set(0.8, 0.8, 1);
-        sprite.userData = {
+        const mat = lightOnMat.clone();
+        mat.opacity = 0.2 + Math.random() * 0.3;
+        const mesh = new THREE.Mesh(lightGeo, mat);
+        mesh.position.set(worldX, WALL_HEIGHT - 0.001, worldZ);
+        mesh.rotation.x = -Math.PI / 2;
+        mesh.userData = {
           flicker: false,
-          baseOpacity: 0.4 + Math.random() * 0.3
+          baseOpacity: mat.opacity
         };
-        scene.add(sprite);
-        lightMeshes.push(sprite);
+        scene.add(mesh);
+        lightMeshes.push(mesh);
       }
+    }
+  }
+  
+  lightChunkCache.set(key, true);
+}
+
+function clearLights() {
+  lightMeshes.forEach(m => scene.remove(m));
+  lightMeshes = [];
+  lightChunkCache.clear();
+}
+
+function updateLightsForPlayer(px, pz) {
+  const [cx, cz] = worldToCell(px, pz);
+  const chunkX = Math.floor(cx / CHUNK_SIZE);
+  const chunkZ = Math.floor(cz / CHUNK_SIZE);
+  
+  // Generate lights for chunks within view radius
+  for (let dx = -VIEW_RADIUS/CHUNK_SIZE - 1; dx <= VIEW_RADIUS/CHUNK_SIZE + 1; dx++) {
+    for (let dz = -VIEW_RADIUS/CHUNK_SIZE - 1; dz <= VIEW_RADIUS/CHUNK_SIZE + 1; dz++) {
+      generateLightsForChunk(chunkX + dx, chunkZ + dz);
     }
   }
 }
@@ -607,11 +607,10 @@ function updateCeilingLights(time) {
     if (light.userData && light.userData.flicker) {
       const phase = light.userData.phase;
       const base = light.userData.baseOpacity;
-      const flicker = Math.sin(time * 3 + phase) * 0.3 + 0.3;
-      light.material.opacity = base * (0.6 + flicker * 0.4);
-      // Random flicker spikes
-      if (Math.random() < 0.01) {
-        light.material.opacity = 0.1;
+      const flicker = Math.sin(time * 3 + phase) * 0.5 + 0.5;
+      light.material.opacity = base * (0.3 + flicker * 0.7);
+      if (Math.random() < 0.005) {
+        light.material.opacity = 0.05;
       }
     }
   }
@@ -948,8 +947,9 @@ function refreshMazeMeshes(px,pz){
     }
   }
   
-  // Generate ceiling lights after maze refresh
-  generateCeilingLights();
+  // Generate ceiling lights for visible chunks
+  clearLights();
+  updateLightsForPlayer(px, pz);
   
   const elapsed = performance.now() - startTime;
   log('   ✅ Maze refresh complete: ' + meshesCreated + ' meshes created, ' + meshesRemoved + ' removed, ' + elapsed.toFixed(2) + 'ms');
@@ -1028,6 +1028,7 @@ function findOpenSpawnPoint(fromX, fromZ, minDist, maxDist, preferDirection) {
     
     if(cellTypeAtWorld(x,z) === OPEN) return [x,z];
   }
+  // Fallback - return a position near the player
   return [fromX + (Math.random()-0.5)*CELL*2, fromZ + (Math.random()-0.5)*CELL*2];
 }
 
@@ -1104,7 +1105,9 @@ function buildBotRuntime(bot){
     sounds: [],
     music: [],
     loadedImages: [],
-    deepFriedTexture: null
+    deepFriedDataUrl: null,
+    musicGainNode: null,
+    musicSourceNode: null
   };
   return runtime;
 }
@@ -1123,12 +1126,12 @@ function shuffledRoster(){
 }
 
 // ============================================================
-// DEEP-FRY ENGINE
+// DEEP-FRY ENGINE - Returns data URL
 // ============================================================
 function renderDeepFried(img) {
   log('🔥 Deep-frying image...');
   
-  // Resize to 128px for pixelated look
+  // Resize to 128px
   let width = img.width;
   let height = img.height;
   const targetSize = 128;
@@ -1143,7 +1146,6 @@ function renderDeepFried(img) {
   width = Math.max(1, width);
   height = Math.max(1, height);
   
-  // Small canvas for processing
   const smallCanvas = document.createElement('canvas');
   const ctx = smallCanvas.getContext('2d');
   smallCanvas.width = width;
@@ -1153,12 +1155,10 @@ function renderDeepFried(img) {
   
   let processedData = ctx.getImageData(0, 0, width, height);
   
-  // Auto-Level (skip)
-  
   // Brightness: -20
   processedData = applyBrightness(processedData, -20);
   
-  // Contrast: 100% (Paint.NET formula)
+  // Contrast: 100%
   processedData = applyContrastPaintDotNet(processedData, 1.0);
   
   ctx.putImageData(processedData, 0, 0);
@@ -1171,11 +1171,10 @@ function renderDeepFried(img) {
   finalCtx.imageSmoothingEnabled = false;
   finalCtx.drawImage(smallCanvas, 0, 0, finalCanvas.width, finalCanvas.height);
   
-  const texture = new THREE.CanvasTexture(finalCanvas);
-  texture.needsUpdate = true;
-  
+  // Return as data URL
+  const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.85);
   log('✅ Deep-fry complete');
-  return texture;
+  return dataUrl;
 }
 
 function applyBrightness(imageData, brightness) {
@@ -1246,10 +1245,10 @@ async function loadBotAssets(runtime) {
         runtime.imageLoaded = true;
         runtime.loadedImages.push(url);
         
-        // Generate deep-fried version
+        // Generate deep-fried version as data URL
         const img = texture.image;
         if (img) {
-          runtime.deepFriedTexture = renderDeepFried(img);
+          runtime.deepFriedDataUrl = renderDeepFried(img);
         }
         
         logSuccess('   ✅ Texture loaded: ' + url);
@@ -1341,11 +1340,23 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   runtime.instance = instance;
   activeInstances.push(instance);
   log('👾 Spawned ' + runtime.def.name + ' at (' + sx.toFixed(1) + ', ' + sz.toFixed(1) + ')');
+  
+  // Play bot music with distance-based fade
+  playBotMusic(runtime.def.id, sx, sz);
 }
 
 function clearBots(){
   activeInstances.forEach(inst=>{
     scene.remove(inst.sprite);
+    // Stop bot music
+    if (inst.runtime.musicSourceNode) {
+      try { inst.runtime.musicSourceNode.stop(); } catch(e) {}
+      inst.runtime.musicSourceNode = null;
+    }
+    if (inst.runtime.musicGainNode) {
+      inst.runtime.musicGainNode.disconnect();
+      inst.runtime.musicGainNode = null;
+    }
     inst.runtime.instance = null;
   });
   activeInstances = [];
@@ -1358,11 +1369,60 @@ function relocateBot(inst, px, pz){
   log('🔄 Relocated bot to (' + sx.toFixed(1) + ', ' + sz.toFixed(1) + ')');
 }
 
+function playBotMusic(botId, bx, bz) {
+  if (!audioCtx) return;
+  
+  const runtime = botRuntimes.find(r => r.def.id === botId);
+  if (!runtime || runtime.music.length === 0) return;
+  
+  const url = runtime.music[Math.floor(Math.random() * runtime.music.length)];
+  
+  fetch(url)
+    .then(r => r.arrayBuffer())
+    .then(buffer => audioCtx.decodeAudioData(buffer))
+    .then(decoded => {
+      // Stop any existing music for this bot
+      if (runtime.musicSourceNode) {
+        try { runtime.musicSourceNode.stop(); } catch(e) {}
+      }
+      if (runtime.musicGainNode) {
+        runtime.musicGainNode.disconnect();
+      }
+      
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.05; // Start low
+      gain.connect(audioCtx.destination);
+      
+      const source = audioCtx.createBufferSource();
+      source.buffer = decoded;
+      source.loop = true;
+      source.connect(gain);
+      source.start();
+      
+      runtime.musicGainNode = gain;
+      runtime.musicSourceNode = source;
+    })
+    .catch(err => logError('Bot music failed: ' + err.message));
+}
+
+function updateBotMusicDistance(inst, px, pz) {
+  const runtime = inst.runtime;
+  if (!runtime.musicGainNode) return;
+  
+  const dist = Math.hypot(inst.x - px, inst.z - pz);
+  const maxDist = BOT_FAR_THRESHOLD;
+  const volume = Math.max(0, Math.min(1, 1 - (dist / maxDist)));
+  runtime.musicGainNode.gain.value = volume * 0.15; // Max 15% volume
+}
+
 function stepBot(inst, px, pz, dt, botSpeed){
   const dx = px-inst.x, dz = pz-inst.z;
   const distToPlayer = Math.hypot(dx,dz);
   if(distToPlayer > BOT_FAR_THRESHOLD){ relocateBot(inst, px, pz); return; }
   if(distToPlayer < CATCH_DIST){ hitPlayer(inst.runtime); }
+  
+  // Update bot music volume based on distance
+  updateBotMusicDistance(inst, px, pz);
   
   const desired = Math.atan2(dx,dz);
   const lookahead = 1.4;
@@ -1453,11 +1513,10 @@ function makeDotTexture(color){
 }
 const healTex  = makeDotTexture(0x35d16b);
 const powerTex = makeDotTexture(0x3d8bf0);
-const teleportTex = makeDotTexture(0x8b5cf6); // Purple
+const teleportTex = makeDotTexture(0x8b5cf6);
 
 let pickups = [];
 let lastHealSpawnAt = 0, lastPowerSpawnAt = 0, lastTeleportSpawnAt = 0;
-let stationaryTimer = 0;
 let lastStationaryPos = {x: 0, z: 0};
 
 function spawnPickup(type, px, pz){
@@ -1540,7 +1599,6 @@ let pointerLocked = false;
 let killedBy = 'Unknown';
 let lastCellX = 0, lastCellZ = 0;
 let mazeUpdateCounter = 0;
-let stationaryCheckTimer = 0;
 
 // ============================================================
 // HIGH SCORES
@@ -1955,9 +2013,6 @@ function resetGame(){
   killedBy = 'Unknown';
   lastCellX = 0; lastCellZ = 0;
   mazeUpdateCounter = 0;
-  stationaryTimer = 0;
-  lastStationaryPos = {x: 0, z: 0};
-  stationaryCheckTimer = 0;
 
   baseSpeedCur=BASE_SPEED; gravityCur=GRAVITY; yawRateCur=YAW_RATE;
   jumpBoostCur=COMBO_BASE; slideBoostCur=COMBO_BASE; slideFrictionCur=0.5;
@@ -1968,7 +2023,7 @@ function resetGame(){
   lastSpawnAt = -SPAWN_INTERVAL_BASE;
   lastHealSpawnAt = -HEAL_SPAWN_INTERVAL*0.5;
   lastPowerSpawnAt = -POWER_SPAWN_INTERVAL*0.6;
-  lastTeleportSpawnAt = -TELEPORT_SPAWN_INTERVAL*0.5;
+  lastStationaryPos = {x: 0, z: 0};
 
   document.getElementById('proximity').style.opacity = '0';
   document.getElementById('healFlash').style.opacity = '0';
@@ -2373,16 +2428,6 @@ function update(dt){
     refreshMazeMeshes(px,pz);
   }
 
-  // Stationary detection for teleport orb spawning
-  const distMoved = Math.hypot(px - lastStationaryPos.x, pz - lastStationaryPos.z);
-  if (distMoved < 0.5) {
-    stationaryTimer += dt;
-  } else {
-    stationaryTimer = 0;
-    lastStationaryPos.x = px;
-    lastStationaryPos.z = pz;
-  }
-
   // Spawn bots
   if(elapsed - lastSpawnAt > spawnIntervalCur() && spawnQueue.length){
     lastSpawnAt = elapsed;
@@ -2391,7 +2436,7 @@ function update(dt){
     spawnBot(spawnQueue.shift(), px, pz, spawnDir);
   }
 
-  // Bot count management
+  // Bot count management - respawn if below cap
   const targetCount = expectedBotCountCur();
   if(activeInstances.length < targetCount) {
     botRespawnTimer += dt;
@@ -2403,6 +2448,9 @@ function update(dt){
         if(spawnQueue.length) {
           const spawnDir = Math.atan2(0, -1) + (Math.random() - 0.5) * 2;
           spawnBot(spawnQueue.shift(), px, pz, spawnDir);
+        } else {
+          // Refill queue if empty
+          spawnQueue = shuffledRoster();
         }
       }
     }
@@ -2410,19 +2458,27 @@ function update(dt){
     botRespawnTimer = 0;
   }
 
-  // Pickups
-  if(elapsed - lastHealSpawnAt > HEAL_SPAWN_INTERVAL){ lastHealSpawnAt = elapsed; spawnPickup('heal', px, pz); }
-  if(elapsed - lastPowerSpawnAt > POWER_SPAWN_INTERVAL){ lastPowerSpawnAt = elapsed; spawnPickup('power', px, pz); }
+  // Pickups - check if player is stationary for purple orb
+  const distMoved = Math.hypot(px - lastStationaryPos.x, pz - lastStationaryPos.z);
+  const isStationary = distMoved < 0.5;
+  lastStationaryPos.x = px;
+  lastStationaryPos.z = pz;
   
-  // Teleport orb spawn - 2x rarer, but spawns faster if stationary
-  let teleportInterval = TELEPORT_SPAWN_INTERVAL;
-  if (stationaryTimer > STATIONARY_THRESHOLD) {
-    teleportInterval = TELEPORT_SPAWN_INTERVAL * 0.3; // 3x faster when stationary
-    log('🟣 Stationary for ' + stationaryTimer.toFixed(1) + 's, teleport spawn rate increased');
+  // Heal pickup
+  if(elapsed - lastHealSpawnAt > HEAL_SPAWN_INTERVAL){ 
+    lastHealSpawnAt = elapsed; 
+    // 50% chance for purple orb if stationary
+    if (isStationary && Math.random() < 0.5) {
+      spawnPickup('teleport', px, pz);
+    } else {
+      spawnPickup('heal', px, pz);
+    }
   }
-  if(elapsed - lastTeleportSpawnAt > teleportInterval){ 
-    lastTeleportSpawnAt = elapsed; 
-    spawnPickup('teleport', px, pz); 
+  
+  // Power pickup
+  if(elapsed - lastPowerSpawnAt > POWER_SPAWN_INTERVAL){ 
+    lastPowerSpawnAt = elapsed; 
+    spawnPickup('power', px, pz); 
   }
 
   const bSpeed = botSpeedCur();
@@ -2464,8 +2520,6 @@ function update(dt){
         pz = tz;
         log('🟣 Teleported to (' + tx.toFixed(1) + ', ' + tz.toFixed(1) + ')');
         showToast('✦ You\'ve been teleported! ✦');
-        // Reset stationary timer after teleport
-        stationaryTimer = 0;
         lastStationaryPos.x = px;
         lastStationaryPos.z = pz;
       }
@@ -2570,25 +2624,15 @@ function dieByBot(runtime, message){
 
   const js = document.getElementById('jumpscare');
   
-  // Use deep-fried texture if available
-  let useTexture = null;
-  if (runtime && runtime.deepFriedTexture) {
-    useTexture = runtime.deepFriedTexture;
-  } else if (runtime && runtime.texture) {
-    useTexture = runtime.texture;
-  }
-  
-  if (useTexture) {
-    const img = useTexture.image;
-    if (img) {
-      js.style.backgroundImage = `url(${img.src})`;
-      js.style.backgroundColor = 'transparent';
-      log('💀 Jumpscare with deep-fried image: ' + (runtime ? runtime.def.id : 'unknown'));
-    } else {
-      js.className = 'fallback';
-      js.style.backgroundImage = 'none';
-      js.style.backgroundColor = '#' + getBotColor(runtime.def.id).toString(16).padStart(6,'0');
-    }
+  // Use deep-fried data URL if available
+  if (runtime && runtime.deepFriedDataUrl) {
+    js.style.backgroundImage = `url(${runtime.deepFriedDataUrl})`;
+    js.style.backgroundColor = 'transparent';
+    log('💀 Jumpscare with deep-fried image: ' + runtime.def.id);
+  } else if (runtime && runtime.texture && runtime.texture.image) {
+    js.style.backgroundImage = `url(${runtime.texture.image.src})`;
+    js.style.backgroundColor = 'transparent';
+    log('💀 Jumpscare with normal image: ' + runtime.def.id);
   } else {
     js.className = 'fallback';
     js.style.backgroundImage = 'none';
@@ -2600,7 +2644,7 @@ function dieByBot(runtime, message){
     document.exitPointerLock();
   }
 
-  // Flash sequence with deep-fried
+  // Flash sequence
   let flashCount = 0;
   const maxFlashes = 3;
   
@@ -2610,29 +2654,20 @@ function dieByBot(runtime, message){
     flashCount++;
     if (flashCount < maxFlashes * 2) {
       // Alternate between normal and deep-fried
-      if (runtime && runtime.texture && runtime.deepFriedTexture) {
+      if (runtime && runtime.texture && runtime.deepFriedDataUrl) {
         if (flashCount % 2 === 1) {
           // Deep-fried
-          const img = runtime.deepFriedTexture.image;
-          if (img) {
-            js.style.backgroundImage = `url(${img.src})`;
-          }
+          js.style.backgroundImage = `url(${runtime.deepFriedDataUrl})`;
         } else {
           // Normal
-          const img = runtime.texture.image;
-          if (img) {
-            js.style.backgroundImage = `url(${img.src})`;
-          }
+          js.style.backgroundImage = `url(${runtime.texture.image.src})`;
         }
       }
       setTimeout(doFlash, 150);
     } else {
       // Final: settle on deep-fried
-      if (runtime && runtime.deepFriedTexture) {
-        const img = runtime.deepFriedTexture.image;
-        if (img) {
-          js.style.backgroundImage = `url(${img.src})`;
-        }
+      if (runtime && runtime.deepFriedDataUrl) {
+        js.style.backgroundImage = `url(${runtime.deepFriedDataUrl})`;
       }
       
       setTimeout(() => {
@@ -2676,7 +2711,7 @@ function dieByBot(runtime, message){
     }
   }
   
-  // Start the flash sequence after a short delay
+  // Start the flash sequence
   setTimeout(doFlash, 100);
 }
 
