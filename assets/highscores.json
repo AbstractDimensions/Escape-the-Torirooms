@@ -15,6 +15,14 @@
       "date": "2026-07-10T12:28:34.697Z",
       "killedBy": "Cayla",
       "upgrades": 1
+    },
+    {
+      "username": "Louis",
+      "time": 13.9,
+      "distance": 154,
+      "date": "2026-07-10T12:29:20.739Z",
+      "killedBy": "Zenikah",
+      "upgrades": 0
     }
   ],
   "topDistances": [
@@ -33,6 +41,14 @@
       "date": "2026-07-10T12:28:34.697Z",
       "killedBy": "Cayla",
       "upgrades": 1
+    },
+    {
+      "username": "Louis",
+      "distance": 154,
+      "time": 13.9,
+      "date": "2026-07-10T12:29:20.739Z",
+      "killedBy": "Zenikah",
+      "upgrades": 0
     }
   ]
 }
