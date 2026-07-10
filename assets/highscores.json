@@ -23,6 +23,14 @@
       "date": "2026-07-10T12:29:20.739Z",
       "killedBy": "Zenikah",
       "upgrades": 0
+    },
+    {
+      "username": "louis",
+      "time": 8,
+      "distance": 77,
+      "date": "2026-07-10T12:32:46.774Z",
+      "killedBy": "Unknown",
+      "upgrades": 0
     }
   ],
   "topDistances": [
@@ -48,6 +56,14 @@
       "time": 13.9,
       "date": "2026-07-10T12:29:20.739Z",
       "killedBy": "Zenikah",
+      "upgrades": 0
+    },
+    {
+      "username": "louis",
+      "distance": 77,
+      "time": 8,
+      "date": "2026-07-10T12:32:46.774Z",
+      "killedBy": "Unknown",
       "upgrades": 0
     }
   ]
