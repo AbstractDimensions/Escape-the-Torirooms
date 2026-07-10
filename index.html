@@ -228,8 +228,8 @@
 <!-- Start Screen -->
 <div id="startScreen">
   <h1>
-    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.6</span>';">
-    <span class="version-tag">v1.0.6</span>
+    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.7</span>';">
+    <span class="version-tag">v1.0.7</span>
   </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
@@ -277,7 +277,7 @@
 // ============================================================
 // VERSION
 // ============================================================
-const VERSION = 'v1.0.6';
+const VERSION = 'v1.0.7';
 
 // ============================================================
 // CONFIGURATION
@@ -340,37 +340,26 @@ async function scanGitHubFiles() {
   
   console.log('📂 Scanning GitHub repository for files...');
   
-  const folders = [
-    '', // Root
-  ];
-  
-  const allFiles = {};
-  
-  async function scanFolder(path) {
-    const url = path ? `${baseUrl}/${path}` : baseUrl;
-    try {
-      const response = await fetch(url);
-      if (!response.ok) return;
-      const data = await response.json();
-      for (const item of data) {
-        if (item.type === 'file') {
-          const ext = item.name.split('.').pop().toLowerCase();
-          const base = item.name.substring(0, item.name.lastIndexOf('.'));
-          if (!allFiles[base]) allFiles[base] = [];
-          allFiles[base].push(ext);
-        }
-      }
-    } catch(e) {
-      console.log('⚠️ Error scanning folder:', path, e.message);
+  try {
+    const response = await fetch(baseUrl);
+    if (!response.ok) {
+      console.log('⚠️ GitHub API error:', response.status);
+      return;
     }
+    const data = await response.json();
+    for (const item of data) {
+      if (item.type === 'file') {
+        const ext = item.name.split('.').pop().toLowerCase();
+        const base = item.name.substring(0, item.name.lastIndexOf('.'));
+        if (!fileCache[base]) fileCache[base] = [];
+        fileCache[base].push(ext);
+      }
+    }
+    fileCacheLoaded = true;
+    console.log('📂 File cache loaded:', Object.keys(fileCache).length, 'base filenames found');
+  } catch(e) {
+    console.log('⚠️ Error scanning GitHub:', e.message);
   }
-  
-  await scanFolder('');
-  
-  fileCache = allFiles;
-  fileCacheLoaded = true;
-  console.log('📂 File cache loaded:', Object.keys(fileCache).length, 'base filenames found');
-  console.log('📂 Sample:', Object.keys(fileCache).slice(0, 20));
 }
 
 function getFileUrl(baseName) {
@@ -521,11 +510,11 @@ function floorDiv(a,b){ return Math.floor(a/b); }
 function mod(a,b){ return ((a%b)+b)%b; }
 
 // ============================================================
-// DUNGEON GENERATION - Older expansive rooms + corridors 1-4 wide
+// DUNGEON GENERATION - Large rooms (3x larger), corridors 1-4 wide
 // ============================================================
 const WALL=0, OPEN=1, PIT=2, WALL_SLIT=3;
-const MIN_ROOM_SIZE = 3;
-const MAX_ROOM_SIZE = 7;
+const MIN_ROOM_SIZE = 9;   // 3x larger (was 3)
+const MAX_ROOM_SIZE = 21;  // 3x larger (was 7)
 let mazeSeed = 1;
 let roomOffsetX = 0, roomOffsetZ = 0;
 let cellCache = new Map();
@@ -560,10 +549,10 @@ function getCell(cx0,cz0){
   const cx = cx0 + roomOffsetX;
   const cz = cz0 + roomOffsetZ;
   
-  const rx = floorDiv(cx, 12);
-  const rz = floorDiv(cz, 12);
-  const localX = cx - rx * 12;
-  const localZ = cz - rz * 12;
+  const rx = floorDiv(cx, 30);  // Larger room grid spacing
+  const rz = floorDiv(cz, 30);
+  const localX = cx - rx * 30;
+  const localZ = cz - rz * 30;
   
   const roomSizeX = getRoomSize(rx, rz, mazeSeed);
   const roomSizeZ = getRoomSize(rx, rz, mazeSeed + 1);
@@ -606,10 +595,10 @@ function getCell(cx0,cz0){
     const inVerticalBand = isVerticalCorridor && localZ >= roomSizeZ && Math.abs(localX - roomSizeX) <= halfWidth;
     
     if (inHorizontalBand) {
-      // Horizontal corridor - everything is OPEN (no obstacles)
+      // Horizontal corridor - everything is OPEN
       type = OPEN;
     } else if (inVerticalBand) {
-      // Vertical corridor - everything is OPEN (no obstacles)
+      // Vertical corridor - everything is OPEN
       type = OPEN;
     } else {
       type = WALL;
@@ -758,7 +747,7 @@ function refreshMazeMeshes(px,pz){
 }
 
 // ============================================================
-// COLLISION - Full cell collision (no gaps)
+// COLLISION - Full cell coverage (no gaps, consistent for jumping/crouching)
 // ============================================================
 function isInsideWall(x,z) {
   const t = cellTypeAtWorld(x,z);
@@ -766,11 +755,13 @@ function isInsideWall(x,z) {
 }
 
 function resolveCollision(x,z) {
+  // Get all cells that overlap with the player
+  const cellRadius = 1; // Check 1 cell in each direction
   const [cx,cz] = worldToCell(x,z);
   
-  // Check all 4 cells around the player
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dz = -1; dz <= 1; dz++) {
+  // Check all cells in a 3x3 grid around the player
+  for (let dx = -cellRadius; dx <= cellRadius; dx++) {
+    for (let dz = -cellRadius; dz <= cellRadius; dz++) {
       const checkX = cx + dx;
       const checkZ = cz + dz;
       const t = getCell(checkX, checkZ).type;
@@ -779,25 +770,27 @@ function resolveCollision(x,z) {
       if (!blocks) continue;
       
       const [wx,wz] = cellCenter(checkX, checkZ);
-      const halfX = CELL/2 - PLAYER_RADIUS;
-      const halfZ = CELL/2 - PLAYER_RADIUS;
+      const halfX = CELL / 2;
+      const halfZ = CELL / 2;
+      const radius = PLAYER_RADIUS;
       
-      // Check if player overlaps with this wall cell
-      const overlapX = (x > wx - halfX && x < wx + halfX);
-      const overlapZ = (z > wz - halfZ && z < wz + halfZ);
+      // Check if the player circle overlaps with this wall cell
+      const closestX = Math.max(wx - halfX, Math.min(x, wx + halfX));
+      const closestZ = Math.max(wz - halfZ, Math.min(z, wz + halfZ));
+      const distX = x - closestX;
+      const distZ = z - closestZ;
+      const dist = Math.hypot(distX, distZ);
       
-      if (overlapX && overlapZ) {
-        // Push out in the direction of least overlap
-        const dx2 = x - wx;
-        const dz2 = z - wz;
-        const absDx = Math.abs(dx2);
-        const absDz = Math.abs(dz2);
-        
-        if (absDx > absDz) {
-          x = wx + Math.sign(dx2) * halfX;
-        } else {
-          z = wz + Math.sign(dz2) * halfZ;
-        }
+      if (dist < radius && dist > 0.0001) {
+        // Push player out of the wall
+        const overlap = radius - dist;
+        const pushX = (distX / dist) * overlap;
+        const pushZ = (distZ / dist) * overlap;
+        x += pushX;
+        z += pushZ;
+      } else if (dist < 0.0001) {
+        // Player is exactly at the center of the wall - push them out
+        x += radius;
       }
     }
   }
@@ -925,7 +918,6 @@ async function loadBotAssets(runtime) {
       runtime.imageLoaded = true;
       console.log(`✅ Image loaded: ${imageUrls[0]}`);
       if (runtime.instance) {
-        // Update sprite texture
         const tex = new THREE.Texture(img);
         tex.needsUpdate = true;
         runtime.instance.sprite.material.map = tex;
@@ -938,14 +930,12 @@ async function loadBotAssets(runtime) {
     img.src = imageUrls[0];
   }
   
-  // Get sound URLs from cache
   const soundUrls = getFileUrls(botId + '_sound');
   runtime.sounds = soundUrls;
   if (soundUrls.length > 0) {
     console.log(`✅ ${soundUrls.length} sound(s) found for ${botId}`);
   }
   
-  // Get music URLs from cache
   const musicUrls = getFileUrls(botId + '_music');
   runtime.music = musicUrls;
   if (musicUrls.length > 0) {
@@ -976,7 +966,6 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   
   const [sx,sz] = findOpenSpawnPoint(px, pz, minDist, maxDist, preferDirection);
   
-  // Use loaded image or placeholder
   let texture;
   if (runtime.imgEl) {
     texture = new THREE.Texture(runtime.imgEl);
@@ -1532,7 +1521,6 @@ function showComic() {
     screen.removeEventListener('click', showSkip);
     playMenuMusic();
     
-    // Set title image
     const titleImg = document.getElementById('titleImage');
     const titleUrls = getFileUrls('title');
     if (titleUrls.length > 0) {
@@ -1563,8 +1551,8 @@ function resetGame(){
   meshPool = new Map(); 
   cellCache = new Map();
   mazeSeed = Math.floor(Math.random()*99999)+1;
-  roomOffsetX = Math.floor(Math.random()*12);
-  roomOffsetZ = Math.floor(Math.random()*12);
+  roomOffsetX = Math.floor(Math.random()*30);
+  roomOffsetZ = Math.floor(Math.random()*30);
 
   px=0; pz=0; yaw=0; playerY=0; vy=0; onGround=true;
   sliding=false; slideSpeed=0; wallrunning=false;
@@ -1609,6 +1597,8 @@ function registerAction(kind){
 
 function doJump(){
   if(state!=='playing') return;
+  // Cannot jump while sliding (including in slits)
+  if(sliding) return;
   if(!onGround && !wallrunning) return;
   vy = JUMP_VY; onGround=false; sliding=false; wallrunning=false;
   registerAction('jump');
@@ -1731,7 +1721,6 @@ function drawMinimap(){
       if(Math.hypot(rx,rz) > Math.min(W,H)/2) continue;
       miniCtx.fillStyle = '#e8dfa8';
       miniCtx.globalAlpha = t===WALL_SLIT? 0.4 : 0.85;
-      // Fill full cell
       miniCtx.fillRect(cx0+rx-cellSize/2, cy0+rz-cellSize/2, cellSize, cellSize);
     }
   }
@@ -1883,7 +1872,6 @@ function hitPlayer(runtime){
   
   playBotSound(runtime.def.id, false);
   
-  // Show jumpscare flash
   const js = document.getElementById('jumpscare');
   js.className = 'fallback';
   js.style.backgroundImage = 'none';
@@ -2132,7 +2120,6 @@ function dieByBot(runtime, message){
     killedBy = 'Pit';
   }
 
-  // FULL JUMPSECARE FLASH - show the image
   const js = document.getElementById('jumpscare');
   js.className = '';
   if(!message && runtime && runtime.imgEl){
@@ -2149,7 +2136,6 @@ function dieByBot(runtime, message){
     document.exitPointerLock();
   }
 
-  // INSTANT: Hide jumpscare and show game over immediately
   setTimeout(() => {
     if(deathSeq !== mySeq) return;
     js.style.display = 'none';
@@ -2268,13 +2254,10 @@ async function loadAllBotAssets() {
 async function init() {
   console.log('🚀 Initializing game v' + VERSION);
   
-  // Scan GitHub for files first
   await scanGitHubFiles();
   
-  // Ensure start screen is visible initially
   document.getElementById('startScreen').style.display = 'flex';
   
-  // Show comic first
   if (!comicShown) {
     comicShown = true;
     document.getElementById('startScreen').style.display = 'none';
@@ -2284,17 +2267,14 @@ async function init() {
     }, 300);
   }
   
-  // Load bot assets
   await loadAllBotAssets();
   
-  // Start the loop
   resetGame();
   requestAnimationFrame(tick);
   
   console.log('✅ Game initialization complete');
 }
 
-// Start everything
 init();
 })();
 </script>
