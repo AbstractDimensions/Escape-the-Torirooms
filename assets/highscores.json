@@ -66,18 +66,18 @@
     },
     {
       "username": "Louis",
+      "time": 19.1,
+      "distance": 86,
+      "date": "2026-07-10T22:56:40.630Z",
+      "killedBy": "Ruhan",
+      "upgrades": 1
+    },
+    {
+      "username": "Louis",
       "time": 18.2,
       "distance": 186,
       "date": "2026-07-10T13:39:14.899Z",
       "killedBy": "Priya",
-      "upgrades": 0
-    },
-    {
-      "username": "Louis",
-      "time": 16.8,
-      "distance": 160,
-      "date": "2026-07-10T13:13:20.537Z",
-      "killedBy": "Zenikah",
       "upgrades": 0
     }
   ],
