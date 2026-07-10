@@ -270,9 +270,9 @@
 "use strict";
 
 // ============================================================
-// VERSION (logged to console only)
+// VERSION
 // ============================================================
-const VERSION = 'v2.0.0';
+const VERSION = 'v2.1.0';
 console.log('🚀 Escape the Torirooms ' + VERSION);
 
 // ============================================================
@@ -531,13 +531,11 @@ function generateLightsForChunk(chunkX, chunkZ) {
       const worldX = (cx + dx) * CELL;
       const worldZ = (cz + dz) * CELL;
       
-      // Check if there's a wall at this position
       const cellType = cellTypeAtWorld(worldX, worldZ);
       if (cellType === WALL || cellType === WALL_SLIT) continue;
       
       const h = hash2(cx + dx, cz + dz, 888);
       
-      // 2% chance burnt out
       if (h < 0.02) {
         const mesh = new THREE.Mesh(lightGeo, lightOffMat.clone());
         mesh.position.set(worldX, WALL_HEIGHT - 0.001, worldZ);
@@ -547,7 +545,6 @@ function generateLightsForChunk(chunkX, chunkZ) {
         continue;
       }
       
-      // 5% chance flickering
       if (h < 0.07) {
         const mat = lightFlickerMat.clone();
         const mesh = new THREE.Mesh(lightGeo, mat);
@@ -563,7 +560,6 @@ function generateLightsForChunk(chunkX, chunkZ) {
         continue;
       }
       
-      // Normal light
       if (h < 0.5) {
         const mat = lightOnMat.clone();
         mat.opacity = 0.2 + Math.random() * 0.3;
@@ -594,7 +590,6 @@ function updateLightsForPlayer(px, pz) {
   const chunkX = Math.floor(cx / CHUNK_SIZE);
   const chunkZ = Math.floor(cz / CHUNK_SIZE);
   
-  // Generate lights for chunks within view radius
   for (let dx = -VIEW_RADIUS/CHUNK_SIZE - 1; dx <= VIEW_RADIUS/CHUNK_SIZE + 1; dx++) {
     for (let dz = -VIEW_RADIUS/CHUNK_SIZE - 1; dz <= VIEW_RADIUS/CHUNK_SIZE + 1; dz++) {
       generateLightsForChunk(chunkX + dx, chunkZ + dz);
@@ -1028,7 +1023,6 @@ function findOpenSpawnPoint(fromX, fromZ, minDist, maxDist, preferDirection) {
     
     if(cellTypeAtWorld(x,z) === OPEN) return [x,z];
   }
-  // Fallback - return a position near the player
   return [fromX + (Math.random()-0.5)*CELL*2, fromZ + (Math.random()-0.5)*CELL*2];
 }
 
@@ -1126,34 +1120,18 @@ function shuffledRoster(){
 }
 
 // ============================================================
-// DEEP-FRY ENGINE - Returns data URL
+// DEEP-FRY - Only Brightness & Contrast (no resizing)
 // ============================================================
 function renderDeepFried(img) {
   log('🔥 Deep-frying image...');
   
-  // Resize to 128px
-  let width = img.width;
-  let height = img.height;
-  const targetSize = 128;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = img.width;
+  canvas.height = img.height;
+  ctx.drawImage(img, 0, 0);
   
-  if (width > height) {
-    height = Math.round(height * (targetSize / width));
-    width = targetSize;
-  } else {
-    width = Math.round(width * (targetSize / height));
-    height = targetSize;
-  }
-  width = Math.max(1, width);
-  height = Math.max(1, height);
-  
-  const smallCanvas = document.createElement('canvas');
-  const ctx = smallCanvas.getContext('2d');
-  smallCanvas.width = width;
-  smallCanvas.height = height;
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(img, 0, 0, width, height);
-  
-  let processedData = ctx.getImageData(0, 0, width, height);
+  let processedData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   
   // Brightness: -20
   processedData = applyBrightness(processedData, -20);
@@ -1163,16 +1141,7 @@ function renderDeepFried(img) {
   
   ctx.putImageData(processedData, 0, 0);
   
-  // Scale back up
-  const finalCanvas = document.createElement('canvas');
-  const finalCtx = finalCanvas.getContext('2d');
-  finalCanvas.width = img.width;
-  finalCanvas.height = img.height;
-  finalCtx.imageSmoothingEnabled = false;
-  finalCtx.drawImage(smallCanvas, 0, 0, finalCanvas.width, finalCanvas.height);
-  
-  // Return as data URL
-  const dataUrl = finalCanvas.toDataURL('image/jpeg', 0.85);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
   log('✅ Deep-fry complete');
   return dataUrl;
 }
@@ -1220,9 +1189,6 @@ async function loadBotAssets(runtime) {
   const botId = runtime.def.id;
   log('🔍 Loading assets for: ' + botId);
   
-  // Images: botId1.*, botId2.*, etc.
-  let loaded = false;
-  
   for (let num = 1; num <= 10; num++) {
     const baseName = botId + num;
     const urls = getFileUrls(baseName);
@@ -1245,14 +1211,12 @@ async function loadBotAssets(runtime) {
         runtime.imageLoaded = true;
         runtime.loadedImages.push(url);
         
-        // Generate deep-fried version as data URL
         const img = texture.image;
         if (img) {
           runtime.deepFriedDataUrl = renderDeepFried(img);
         }
         
         logSuccess('   ✅ Texture loaded: ' + url);
-        loaded = true;
         break;
       } catch(err) {
         logWarn('   ❌ Failed to load ' + url + ': ' + err.message);
@@ -1262,41 +1226,35 @@ async function loadBotAssets(runtime) {
     }
   }
   
-  if (!loaded) {
+  if (!runtime.imageLoaded) {
     logWarn('   ⚠️ No image found for ' + botId);
   }
   
-  // Sounds: botId_sound1.*, botId_sound2.*, etc.
-  let soundFound = false;
   for (let num = 1; num <= 10; num++) {
     const baseName = botId + '_sound' + num;
     const urls = getFileUrls(baseName);
     if (urls.length > 0) {
       runtime.sounds.push(urls[0]);
-      soundFound = true;
       log('   🔊 Found sound: ' + urls[0]);
     } else {
       break;
     }
   }
-  if (!soundFound) {
+  if (runtime.sounds.length === 0) {
     logWarn('   ⚠️ No sounds found for ' + botId);
   }
   
-  // Music: botId_music1.*, botId_music2.*, etc.
-  let musicFound = false;
   for (let num = 1; num <= 10; num++) {
     const baseName = botId + '_music' + num;
     const urls = getFileUrls(baseName);
     if (urls.length > 0) {
       runtime.music.push(urls[0]);
-      musicFound = true;
       log('   🎵 Found music: ' + urls[0]);
     } else {
       break;
     }
   }
-  if (!musicFound) {
+  if (runtime.music.length === 0) {
     logWarn('   ⚠️ No music found for ' + botId);
   }
 }
@@ -1341,14 +1299,12 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   activeInstances.push(instance);
   log('👾 Spawned ' + runtime.def.name + ' at (' + sx.toFixed(1) + ', ' + sz.toFixed(1) + ')');
   
-  // Play bot music with distance-based fade
   playBotMusic(runtime.def.id, sx, sz);
 }
 
 function clearBots(){
   activeInstances.forEach(inst=>{
     scene.remove(inst.sprite);
-    // Stop bot music
     if (inst.runtime.musicSourceNode) {
       try { inst.runtime.musicSourceNode.stop(); } catch(e) {}
       inst.runtime.musicSourceNode = null;
@@ -1381,7 +1337,6 @@ function playBotMusic(botId, bx, bz) {
     .then(r => r.arrayBuffer())
     .then(buffer => audioCtx.decodeAudioData(buffer))
     .then(decoded => {
-      // Stop any existing music for this bot
       if (runtime.musicSourceNode) {
         try { runtime.musicSourceNode.stop(); } catch(e) {}
       }
@@ -1390,14 +1345,16 @@ function playBotMusic(botId, bx, bz) {
       }
       
       const gain = audioCtx.createGain();
-      gain.gain.value = 0.05; // Start low
+      gain.gain.value = 0.3;
       gain.connect(audioCtx.destination);
       
       const source = audioCtx.createBufferSource();
       source.buffer = decoded;
       source.loop = true;
+      // Start at random position
+      const randomOffset = Math.random() * decoded.duration;
+      source.start(0, randomOffset);
       source.connect(gain);
-      source.start();
       
       runtime.musicGainNode = gain;
       runtime.musicSourceNode = source;
@@ -1410,9 +1367,10 @@ function updateBotMusicDistance(inst, px, pz) {
   if (!runtime.musicGainNode) return;
   
   const dist = Math.hypot(inst.x - px, inst.z - pz);
-  const maxDist = BOT_FAR_THRESHOLD;
-  const volume = Math.max(0, Math.min(1, 1 - (dist / maxDist)));
-  runtime.musicGainNode.gain.value = volume * 0.15; // Max 15% volume
+  // Inverse square falloff: 1/(1 + dist^2)
+  // At dist=2: 1/(1+4) = 0.2 (~half volume)
+  const volume = 0.3 / (1 + dist * dist);
+  runtime.musicGainNode.gain.value = Math.min(0.3, volume);
 }
 
 function stepBot(inst, px, pz, dt, botSpeed){
@@ -1421,7 +1379,6 @@ function stepBot(inst, px, pz, dt, botSpeed){
   if(distToPlayer > BOT_FAR_THRESHOLD){ relocateBot(inst, px, pz); return; }
   if(distToPlayer < CATCH_DIST){ hitPlayer(inst.runtime); }
   
-  // Update bot music volume based on distance
   updateBotMusicDistance(inst, px, pz);
   
   const desired = Math.atan2(dx,dz);
@@ -1516,7 +1473,7 @@ const powerTex = makeDotTexture(0x3d8bf0);
 const teleportTex = makeDotTexture(0x8b5cf6);
 
 let pickups = [];
-let lastHealSpawnAt = 0, lastPowerSpawnAt = 0, lastTeleportSpawnAt = 0;
+let lastHealSpawnAt = 0, lastPowerSpawnAt = 0;
 let lastStationaryPos = {x: 0, z: 0};
 
 function spawnPickup(type, px, pz){
@@ -1531,8 +1488,7 @@ function spawnPickup(type, px, pz){
   sprite.scale.set(1.2,1.2,1.2);
   sprite.position.set(x, 0.8, z);
   scene.add(sprite);
-  const pickup = {type, x, z, sprite, bobPhase: Math.random()*Math.PI*2};
-  pickups.push(pickup);
+  pickups.push({type, x, z, sprite, bobPhase: Math.random()*Math.PI*2});
   
   if (type === 'teleport') {
     log('🟣 Spawned teleport orb at (' + x.toFixed(1) + ', ' + z.toFixed(1) + ')');
@@ -1845,10 +1801,7 @@ function playBotSound(botId, isJumpscare) {
   if (!audioCtx) return;
   
   const runtime = botRuntimes.find(r => r.def.id === botId);
-  if (!runtime || runtime.sounds.length === 0) {
-    generateBeep(isJumpscare);
-    return;
-  }
+  if (!runtime || runtime.sounds.length === 0) return; // No placeholder beep
   
   const url = runtime.sounds[Math.floor(Math.random() * runtime.sounds.length)];
   log('🔊 Playing sound: ' + url);
@@ -1878,30 +1831,6 @@ function playBotSound(botId, isJumpscare) {
       log(isJumpscare ? '🔊 Jumpscare sound' : '🔊 Attack sound');
     })
     .catch(err => logError('Sound failed: ' + err.message));
-}
-
-function generateBeep(isJumpscare) {
-  if (!audioCtx) return;
-  
-  const duration = isJumpscare ? 0.5 : 0.1;
-  const frequency = isJumpscare ? 200 : 800;
-  const gainValue = isJumpscare ? 0.8 : 0.3;
-  
-  const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
-  const data = buffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) {
-    const t = i / audioCtx.sampleRate;
-    data[i] = Math.sin(t * frequency * Math.PI * 2) * Math.exp(-t * (isJumpscare ? 3 : 10));
-  }
-  
-  const gain = audioCtx.createGain();
-  gain.gain.value = gainValue;
-  gain.connect(audioCtx.destination);
-  
-  const source = audioCtx.createBufferSource();
-  source.buffer = buffer;
-  source.connect(gain);
-  source.start();
 }
 
 function distortionCurve(amount){
@@ -2335,10 +2264,18 @@ function hitPlayer(runtime){
   
   playBotSound(runtime.def.id, false);
   
+  // Show the bot's image, not a color flash
   const js = document.getElementById('jumpscare');
-  js.className = 'fallback';
-  js.style.backgroundImage = 'none';
-  js.style.backgroundColor = '#' + getBotColor(runtime.def.id).toString(16).padStart(6,'0');
+  js.className = '';
+  if (runtime && runtime.texture && runtime.texture.image) {
+    js.style.backgroundImage = `url(${runtime.texture.image.src})`;
+    js.style.backgroundColor = 'transparent';
+    log('💥 Hit flash with image: ' + runtime.def.id);
+  } else {
+    js.className = 'fallback';
+    js.style.backgroundImage = 'none';
+    js.style.backgroundColor = '#' + getBotColor(runtime.def.id).toString(16).padStart(6,'0');
+  }
   js.style.display = 'flex';
   setTimeout(()=>{ if(state==='playing') js.style.display='none'; }, 220);
   
@@ -2449,7 +2386,6 @@ function update(dt){
           const spawnDir = Math.atan2(0, -1) + (Math.random() - 0.5) * 2;
           spawnBot(spawnQueue.shift(), px, pz, spawnDir);
         } else {
-          // Refill queue if empty
           spawnQueue = shuffledRoster();
         }
       }
@@ -2458,16 +2394,14 @@ function update(dt){
     botRespawnTimer = 0;
   }
 
-  // Pickups - check if player is stationary for purple orb
+  // Pickups
   const distMoved = Math.hypot(px - lastStationaryPos.x, pz - lastStationaryPos.z);
   const isStationary = distMoved < 0.5;
   lastStationaryPos.x = px;
   lastStationaryPos.z = pz;
   
-  // Heal pickup
   if(elapsed - lastHealSpawnAt > HEAL_SPAWN_INTERVAL){ 
     lastHealSpawnAt = elapsed; 
-    // 50% chance for purple orb if stationary
     if (isStationary && Math.random() < 0.5) {
       spawnPickup('teleport', px, pz);
     } else {
@@ -2475,7 +2409,6 @@ function update(dt){
     }
   }
   
-  // Power pickup
   if(elapsed - lastPowerSpawnAt > POWER_SPAWN_INTERVAL){ 
     lastPowerSpawnAt = elapsed; 
     spawnPickup('power', px, pz); 
@@ -2490,7 +2423,6 @@ function update(dt){
     const dx = px-p.x, dz = pz-p.z;
     const d = Math.hypot(dx,dz);
     
-    // Teleport orb has infinite magnet range
     let magnetRange = MAGNET_RADIUS;
     if (p.type === 'teleport') magnetRange = Infinity;
     
@@ -2514,7 +2446,6 @@ function update(dt){
       } else if(p.type==='power'){ 
         offerUpgrades(); 
       } else if(p.type==='teleport'){
-        // Teleport player
         const [tx, tz] = findOpenTeleportPoint(px, pz, TELEPORT_RADIUS_MIN, TELEPORT_RADIUS_MAX);
         px = tx;
         pz = tz;
@@ -2653,19 +2584,15 @@ function dieByBot(runtime, message){
     
     flashCount++;
     if (flashCount < maxFlashes * 2) {
-      // Alternate between normal and deep-fried
       if (runtime && runtime.texture && runtime.deepFriedDataUrl) {
         if (flashCount % 2 === 1) {
-          // Deep-fried
           js.style.backgroundImage = `url(${runtime.deepFriedDataUrl})`;
         } else {
-          // Normal
           js.style.backgroundImage = `url(${runtime.texture.image.src})`;
         }
       }
       setTimeout(doFlash, 150);
     } else {
-      // Final: settle on deep-fried
       if (runtime && runtime.deepFriedDataUrl) {
         js.style.backgroundImage = `url(${runtime.deepFriedDataUrl})`;
       }
@@ -2711,7 +2638,6 @@ function dieByBot(runtime, message){
     }
   }
   
-  // Start the flash sequence
   setTimeout(doFlash, 100);
 }
 
