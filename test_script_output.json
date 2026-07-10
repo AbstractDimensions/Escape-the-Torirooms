@@ -1,5 +1,7 @@
 {
   "test": "Hello from Apps Script!",
-  "timestamp": "2026-07-10T12:14:18.303Z",
-  "message": "This file was created by the GitHub API test script."
+  "timestamp": "2026-07-10T12:14:19.575Z",
+  "message": "This file was UPDATED by the GitHub API test script.",
+  "updated": true,
+  "updateCount": 1
 }
