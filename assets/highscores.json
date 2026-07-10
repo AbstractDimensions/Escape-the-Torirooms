@@ -49,6 +49,14 @@
       "upgrades": 0
     },
     {
+      "username": "Louis",
+      "time": 9.6,
+      "distance": 44,
+      "date": "2026-07-10T13:12:35.848Z",
+      "killedBy": "Unknown",
+      "upgrades": 0
+    },
+    {
       "username": "louis",
       "time": 8,
       "distance": 77,
@@ -119,6 +127,14 @@
       "distance": 77,
       "time": 8,
       "date": "2026-07-10T12:32:46.774Z",
+      "killedBy": "Unknown",
+      "upgrades": 0
+    },
+    {
+      "username": "Louis",
+      "distance": 44,
+      "time": 9.6,
+      "date": "2026-07-10T13:12:35.848Z",
       "killedBy": "Unknown",
       "upgrades": 0
     },
