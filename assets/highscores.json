@@ -7,6 +7,14 @@
       "date": "2026-07-10T12:20:10.432Z",
       "killedBy": "TestBot",
       "upgrades": 3
+    },
+    {
+      "username": "Louis",
+      "time": 61.5,
+      "distance": 472,
+      "date": "2026-07-10T12:28:34.697Z",
+      "killedBy": "Cayla",
+      "upgrades": 1
     }
   ],
   "topDistances": [
@@ -17,6 +25,14 @@
       "date": "2026-07-10T12:20:10.432Z",
       "killedBy": "TestBot",
       "upgrades": 3
+    },
+    {
+      "username": "Louis",
+      "distance": 472,
+      "time": 61.5,
+      "date": "2026-07-10T12:28:34.697Z",
+      "killedBy": "Cayla",
+      "upgrades": 1
     }
   ]
 }
