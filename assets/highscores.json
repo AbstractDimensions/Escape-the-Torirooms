@@ -42,6 +42,14 @@
     },
     {
       "username": "louis",
+      "time": 11.1,
+      "distance": 91,
+      "date": "2026-07-10T13:11:01.339Z",
+      "killedBy": "Unknown",
+      "upgrades": 0
+    },
+    {
+      "username": "louis",
       "time": 8,
       "distance": 77,
       "date": "2026-07-10T12:32:46.774Z",
@@ -97,6 +105,14 @@
       "date": "2026-07-10T12:33:13.555Z",
       "killedBy": "Aidan Senekal",
       "upgrades": 1
+    },
+    {
+      "username": "louis",
+      "distance": 91,
+      "time": 11.1,
+      "date": "2026-07-10T13:11:01.339Z",
+      "killedBy": "Unknown",
+      "upgrades": 0
     },
     {
       "username": "louis",
