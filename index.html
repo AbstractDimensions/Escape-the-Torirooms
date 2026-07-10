@@ -228,8 +228,8 @@
 <!-- Start Screen -->
 <div id="startScreen">
   <h1>
-    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.8</span>';">
-    <span class="version-tag">v1.0.8</span>
+    <img id="titleImage" src="" alt="Escape the Torirooms" onerror="this.style.display='none'; this.parentElement.innerHTML='<span class=\'title-placeholder\'>ESCAPE THE TORIROOMS</span><span class=\'version-tag\'>v1.0.9</span>';">
+    <span class="version-tag">v1.0.9</span>
   </h1>
   <p class="sub">Hold anywhere to run. Drag left/right to steer.<br>
   Swipe up to jump. Swipe down to slide.<br>
@@ -277,7 +277,7 @@
 // ============================================================
 // VERSION
 // ============================================================
-const VERSION = 'v1.0.8';
+const VERSION = 'v1.0.9';
 
 // ============================================================
 // CONFIGURATION
@@ -510,11 +510,9 @@ function floorDiv(a,b){ return Math.floor(a/b); }
 function mod(a,b){ return ((a%b)+b)%b; }
 
 // ============================================================
-// DUNGEON GENERATION - Rooms +2 at final step
+// DUNGEON GENERATION - INVERTED: Empty world with wall nodes
 // ============================================================
 const WALL=0, OPEN=1, PIT=2, WALL_SLIT=3;
-const MIN_ROOM_SIZE = 3;
-const MAX_ROOM_SIZE = 7;
 let mazeSeed = 1;
 let roomOffsetX = 0, roomOffsetZ = 0;
 let cellCache = new Map();
@@ -525,15 +523,68 @@ const floorTileGeo = new THREE.PlaneGeometry(CELL, CELL);
 
 function cellKey(cx,cz){ return cx+','+cz; }
 
-function getRoomSize(rx, rz, seed) {
-  const h = hash2(rx, rz, seed + 777);
-  const size = Math.floor(MIN_ROOM_SIZE + h * (MAX_ROOM_SIZE - MIN_ROOM_SIZE + 1));
-  return size + 2; // Add 2 cells (1 on each side) so rooms connect to corridors
+// Generate wall nodes (rectangles of walls)
+function generateWallNodes() {
+  const nodes = [];
+  const numNodes = 5 + Math.floor(Math.random() * 10); // 5-15 nodes
+  
+  for (let i = 0; i < numNodes; i++) {
+    const x = (Math.random() - 0.5) * 80;
+    const z = (Math.random() - 0.5) * 80;
+    const w = 2 + Math.floor(Math.random() * 6); // 2-7 cells wide
+    const h = 2 + Math.floor(Math.random() * 6); // 2-7 cells tall
+    nodes.push({ x: Math.round(x / CELL), z: Math.round(z / CELL), w, h });
+  }
+  return nodes;
 }
 
-function getCorridorWidth(rx, rz, dir, seed) {
-  const h = hash2(rx*17 + dir*11, rz*17 + dir*11, seed + 555);
-  return 1 + Math.floor(h * 4); // 1-4 cells wide
+// Generate connections between nodes (lines of walls or obstacles)
+function generateConnections(nodes) {
+  const connections = [];
+  for (let i = 0; i < nodes.length - 1; i++) {
+    const a = nodes[i];
+    const b = nodes[i + 1];
+    const type = Math.random() < 0.33 ? WALL_SLIT : (Math.random() < 0.5 ? WALL : PIT);
+    connections.push({
+      from: a,
+      to: b,
+      type: type
+    });
+  }
+  return connections;
+}
+
+// Generate pits in the open space
+function generatePits() {
+  const pits = [];
+  const numPits = 3 + Math.floor(Math.random() * 8); // 3-10 pits
+  for (let i = 0; i < numPits; i++) {
+    const x = (Math.random() - 0.5) * 70;
+    const z = (Math.random() - 0.5) * 70;
+    pits.push({ x: Math.round(x / CELL), z: Math.round(z / CELL) });
+  }
+  return pits;
+}
+
+// Pre-compute the world data once per seed
+let worldNodes = [];
+let worldConnections = [];
+let worldPits = [];
+let worldGenerated = false;
+
+function generateWorld(seed) {
+  const oldSeed = mazeSeed;
+  mazeSeed = seed;
+  worldNodes = generateWallNodes();
+  worldConnections = generateConnections(worldNodes);
+  worldPits = generatePits();
+  worldGenerated = true;
+  mazeSeed = oldSeed;
+}
+
+function isPointInRect(px, pz, rect) {
+  return px >= rect.x && px < rect.x + rect.w &&
+         pz >= rect.z && pz < rect.z + rect.h;
 }
 
 function getCell(cx0,cz0){
@@ -549,52 +600,50 @@ function getCell(cx0,cz0){
 
   const cx = cx0 + roomOffsetX;
   const cz = cz0 + roomOffsetZ;
-  
-  const rx = floorDiv(cx, 30);
-  const rz = floorDiv(cz, 30);
-  const localX = cx - rx * 30;
-  const localZ = cz - rz * 30;
-  
-  const roomSizeX = getRoomSize(rx, rz, mazeSeed);
-  const roomSizeZ = getRoomSize(rx, rz, mazeSeed + 1);
-  
-  const inRoomX = localX < roomSizeX;
-  const inRoomZ = localZ < roomSizeZ;
 
-  let type;
+  // Default: OPEN (empty world)
+  let type = OPEN;
 
-  if(inRoomX && inRoomZ) {
-    const roomRand = hash2(rx, rz, mazeSeed + 51);
-    
-    if(roomRand < 0.20) {
-      const pattern = Math.floor(hash2(rx, rz, mazeSeed + 77) * 3);
-      let isPit = false;
-      if(pattern === 0) isPit = ((localX + localZ) % 2 === 0 && localX > 0 && localX < roomSizeX-1 && localZ > 0 && localZ < roomSizeZ-1);
-      else if(pattern === 1) isPit = (localX === Math.floor(roomSizeX/2) || localZ === Math.floor(roomSizeZ/2));
-      else isPit = ((localX === 0 || localX === roomSizeX-1) && (localZ === 0 || localZ === roomSizeZ-1));
-      type = isPit ? PIT : OPEN;
-    } else if(roomRand < 0.30) {
-      const n = valueNoise(cx*0.4, cz*0.4, mazeSeed+3);
-      const r = hash2(cx,cz, mazeSeed+909);
-      if(n > 0.65) type = (r < 0.3) ? WALL_SLIT : WALL;
-      else type = (r < 0.12) ? PIT : OPEN;
-    } else {
-      type = OPEN;
-    }
-  } else {
-    const isHorizontalCorridor = (localZ === roomSizeZ);
-    const isVerticalCorridor = (localX === roomSizeX);
-    
-    const corridorWidth = getCorridorWidth(rx, rz, isHorizontalCorridor ? 1 : 2, mazeSeed);
-    const halfWidth = Math.floor(corridorWidth / 2);
-    
-    const inHorizontalBand = isHorizontalCorridor && localX >= roomSizeX && Math.abs(localZ - roomSizeZ) <= halfWidth;
-    const inVerticalBand = isVerticalCorridor && localZ >= roomSizeZ && Math.abs(localX - roomSizeX) <= halfWidth;
-    
-    if (inHorizontalBand || inVerticalBand) {
-      type = OPEN;
-    } else {
+  // Check if inside a wall node
+  for (const node of worldNodes) {
+    if (isPointInRect(cx, cz, node)) {
       type = WALL;
+      break;
+    }
+  }
+
+  // Check if on a connection line (only if not already a wall)
+  if (type !== WALL) {
+    for (const conn of worldConnections) {
+      const from = conn.from;
+      const to = conn.to;
+      
+      // Check if we're on the line between the two nodes
+      // Simple line check using Bresenham-like approximation
+      const dx = to.x - from.x;
+      const dz = to.z - from.z;
+      const dist = Math.round(Math.hypot(dx, dz));
+      
+      for (let t = 0; t <= dist; t++) {
+        const frac = t / dist;
+        const lx = Math.round(from.x + dx * frac);
+        const lz = Math.round(from.z + dz * frac);
+        if (cx === lx && cz === lz) {
+          type = conn.type;
+          break;
+        }
+      }
+      if (type !== OPEN) break;
+    }
+  }
+
+  // Check if inside a pit (only if not already a wall)
+  if (type !== WALL) {
+    for (const pit of worldPits) {
+      if (cx === pit.x && cz === pit.z) {
+        type = PIT;
+        break;
+      }
     }
   }
 
@@ -613,6 +662,11 @@ function isBlockedForBot(x,z){
 }
 
 function refreshMazeMeshes(px,pz){
+  // Generate world if not done yet
+  if (!worldGenerated) {
+    generateWorld(mazeSeed);
+  }
+  
   const [pcx,pcz] = worldToCell(px,pz);
   const needed = new Set();
   const pitCache = new Map();
@@ -870,10 +924,10 @@ function buildBotRuntime(bot){
   const runtime = { 
     def:bot, 
     placeholderTex:placeholderTexture(getBotColor(bot.id), bot.name),
-    imgEl:null,
-    instance:null,
+    texture: null,
+    textureUrl: null,
+    instance: null,
     imageLoaded: false,
-    imageUrl: null,
     sounds: [],
     music: []
   };
@@ -896,25 +950,31 @@ function shuffledRoster(){
 async function loadBotAssets(runtime) {
   const botId = runtime.def.id;
   
+  // Get image URL from cache
   const imageUrls = getFileUrls(botId);
   if (imageUrls.length > 0) {
-    runtime.imageUrl = imageUrls[0];
-    const img = new Image();
-    img.onload = function() {
-      runtime.imgEl = img;
-      runtime.imageLoaded = true;
-      console.log(`✅ Image loaded: ${imageUrls[0]}`);
-      if (runtime.instance) {
-        const tex = new THREE.Texture(img);
-        tex.needsUpdate = true;
-        runtime.instance.sprite.material.map = tex;
-        runtime.instance.sprite.material.needsUpdate = true;
+    runtime.textureUrl = imageUrls[0];
+    
+    // Use THREE.TextureLoader for proper CORS handling
+    const loader = new THREE.TextureLoader();
+    loader.load(
+      imageUrls[0],
+      function(texture) {
+        runtime.texture = texture;
+        runtime.imageLoaded = true;
+        console.log(`✅ Texture loaded: ${imageUrls[0]}`);
+        
+        // Update sprite if it exists
+        if (runtime.instance && runtime.instance.sprite) {
+          runtime.instance.sprite.material.map = texture;
+          runtime.instance.sprite.material.needsUpdate = true;
+        }
+      },
+      undefined,
+      function(err) {
+        console.log(`❌ Texture failed: ${imageUrls[0]}`, err);
       }
-    };
-    img.onerror = function() {
-      console.log(`❌ Image failed: ${imageUrls[0]}`);
-    };
-    img.src = imageUrls[0];
+    );
   }
   
   const soundUrls = getFileUrls(botId + '_sound');
@@ -953,9 +1013,10 @@ function spawnBot(runtime, px, pz, preferDirection=null){
   
   const [sx,sz] = findOpenSpawnPoint(px, pz, minDist, maxDist, preferDirection);
   
+  // Use loaded texture or placeholder
   let texture;
-  if (runtime.imgEl) {
-    texture = new THREE.Texture(runtime.imgEl);
+  if (runtime.texture) {
+    texture = runtime.texture;
   } else {
     texture = runtime.placeholderTex;
   }
@@ -1308,7 +1369,22 @@ function playAmbience() {
     if (!audioCtx) return;
   }
   
-  const urls = getFileUrls('ambience');
+  // Try ambience1, ambience, etc.
+  let urls = getFileUrls('ambience');
+  if (urls.length === 0) {
+    // Try ambience1
+    urls = getFileUrls('ambience1');
+  }
+  if (urls.length === 0) {
+    // Try any file starting with ambience
+    for (const key of Object.keys(fileCache)) {
+      if (key.startsWith('ambience')) {
+        urls = getFileUrls(key);
+        break;
+      }
+    }
+  }
+  
   if (urls.length > 0) {
     console.log('🎵 Found ambience files:', urls);
     const url = urls[0];
@@ -1509,7 +1585,7 @@ function showComic() {
     
     const titleImg = document.getElementById('titleImage');
     const titleUrls = getFileUrls('title');
-    if (titleUrls.length > 0) {
+    if (titleImg && titleUrls.length > 0) {
       titleImg.src = titleUrls[0];
     }
   });
@@ -1536,6 +1612,7 @@ function resetGame(){
   }
   meshPool = new Map(); 
   cellCache = new Map();
+  worldGenerated = false;
   mazeSeed = Math.floor(Math.random()*99999)+1;
   roomOffsetX = Math.floor(Math.random()*30);
   roomOffsetZ = Math.floor(Math.random()*30);
@@ -1583,7 +1660,6 @@ function registerAction(kind){
 
 function doJump(){
   if(state!=='playing') return;
-  // Only block jumping if inside a slit
   const inSlit = cellTypeAtWorld(px,pz) === WALL_SLIT;
   if(inSlit) return;
   if(!onGround && !wallrunning) return;
@@ -1785,7 +1861,6 @@ function updateChoiceUI(now){
     if(mid) {
       finalizeChoice(mid);
     } else {
-      // Emergency fallback - close the screen
       document.getElementById('powerupScreen').style.display = 'none';
       timeScale = 1;
       setBotAudioSlow(false);
@@ -2101,9 +2176,17 @@ function dieByBot(runtime, message){
 
   const js = document.getElementById('jumpscare');
   js.className = '';
-  if(!message && runtime && runtime.imgEl){
-    js.style.backgroundImage = `url(${runtime.imgEl.src})`;
-    js.style.backgroundColor = 'transparent';
+  if(!message && runtime && runtime.texture){
+    // If we have a loaded texture, use its image
+    const img = runtime.texture.image;
+    if (img) {
+      js.style.backgroundImage = `url(${img.src})`;
+      js.style.backgroundColor = 'transparent';
+    } else {
+      js.className = 'fallback';
+      js.style.backgroundImage = 'none';
+      js.style.backgroundColor = '#' + getBotColor(runtime.def.id).toString(16).padStart(6,'0');
+    }
   } else {
     js.className = 'fallback';
     js.style.backgroundImage = 'none';
