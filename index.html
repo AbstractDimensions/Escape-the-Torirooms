@@ -75,23 +75,21 @@
   
   #comicScreen {
     padding:0; background:#000; overflow:hidden;
-    cursor:default;
-    justify-content:flex-start;
+    cursor:pointer;
+    justify-content:center;
+    align-items:center;
   }
   #comicImage {
-    width:100%; height:100%; object-fit:cover;
-    opacity:0; transition:opacity 1.5s ease;
-    transform: translateX(0%);
+    width:100%;
+    height:100%;
+    object-fit:contain;
+    opacity:0;
+    transition:opacity 1.5s ease;
     flex-shrink:0;
+    max-width:100vw;
+    max-height:100vh;
   }
   #comicImage.visible { opacity:1; }
-  #comicImage.scrolling { 
-    animation: comicScroll 10s linear forwards;
-  }
-  @keyframes comicScroll {
-    0% { transform: translateX(0%); }
-    100% { transform: translateX(-15%); }
-  }
   #comicSkip {
     position:absolute; bottom:40px; left:50%; transform:translateX(-50%);
     padding:12px 40px; background:rgba(0,0,0,0.7); border:2px solid #e8dfa8;
@@ -497,119 +495,9 @@ bigCeil.position.y = WALL_HEIGHT;
 scene.add(bigCeil);
 
 // ============================================================
-// CEILING LIGHTS - PLANES AT y = WALL_HEIGHT - 0.001
+// CEILING LIGHTS - DISABLED (No visible ceiling lights)
 // ============================================================
-const lightGeo = new THREE.PlaneGeometry(CELL * 0.6, CELL * 0.6);
-const lightOnMat = new THREE.MeshBasicMaterial({
-  color: 0xffeedd,
-  transparent: true,
-  opacity: 0.3
-});
-const lightOffMat = new THREE.MeshBasicMaterial({
-  color: 0x111111,
-  transparent: true,
-  opacity: 0.8
-});
-const lightFlickerMat = new THREE.MeshBasicMaterial({
-  color: 0xffeecc,
-  transparent: true,
-  opacity: 0.2
-});
-
-let lightMeshes = [];
-let lightChunkCache = new Map();
-
-function generateLightsForChunk(chunkX, chunkZ) {
-  const key = chunkX + ',' + chunkZ;
-  if (lightChunkCache.has(key)) return;
-  
-  const cx = chunkX * CHUNK_SIZE;
-  const cz = chunkZ * CHUNK_SIZE;
-  
-  for (let dx = 0; dx < CHUNK_SIZE; dx++) {
-    for (let dz = 0; dz < CHUNK_SIZE; dz++) {
-      const worldX = (cx + dx) * CELL;
-      const worldZ = (cz + dz) * CELL;
-      
-      const cellType = cellTypeAtWorld(worldX, worldZ);
-      if (cellType === WALL || cellType === WALL_SLIT) continue;
-      
-      const h = hash2(cx + dx, cz + dz, 888);
-      
-      if (h < 0.02) {
-        const mesh = new THREE.Mesh(lightGeo, lightOffMat.clone());
-        mesh.position.set(worldX, WALL_HEIGHT - 0.001, worldZ);
-        mesh.rotation.x = -Math.PI / 2;
-        scene.add(mesh);
-        lightMeshes.push(mesh);
-        continue;
-      }
-      
-      if (h < 0.07) {
-        const mat = lightFlickerMat.clone();
-        const mesh = new THREE.Mesh(lightGeo, mat);
-        mesh.position.set(worldX, WALL_HEIGHT - 0.001, worldZ);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.userData = {
-          flicker: true,
-          phase: Math.random() * Math.PI * 2,
-          baseOpacity: 0.2 + Math.random() * 0.3
-        };
-        scene.add(mesh);
-        lightMeshes.push(mesh);
-        continue;
-      }
-      
-      if (h < 0.5) {
-        const mat = lightOnMat.clone();
-        mat.opacity = 0.2 + Math.random() * 0.3;
-        const mesh = new THREE.Mesh(lightGeo, mat);
-        mesh.position.set(worldX, WALL_HEIGHT - 0.001, worldZ);
-        mesh.rotation.x = -Math.PI / 2;
-        mesh.userData = {
-          flicker: false,
-          baseOpacity: mat.opacity
-        };
-        scene.add(mesh);
-        lightMeshes.push(mesh);
-      }
-    }
-  }
-  
-  lightChunkCache.set(key, true);
-}
-
-function clearLights() {
-  lightMeshes.forEach(m => scene.remove(m));
-  lightMeshes = [];
-  lightChunkCache.clear();
-}
-
-function updateLightsForPlayer(px, pz) {
-  const [cx, cz] = worldToCell(px, pz);
-  const chunkX = Math.floor(cx / CHUNK_SIZE);
-  const chunkZ = Math.floor(cz / CHUNK_SIZE);
-  
-  for (let dx = -VIEW_RADIUS/CHUNK_SIZE - 1; dx <= VIEW_RADIUS/CHUNK_SIZE + 1; dx++) {
-    for (let dz = -VIEW_RADIUS/CHUNK_SIZE - 1; dz <= VIEW_RADIUS/CHUNK_SIZE + 1; dz++) {
-      generateLightsForChunk(chunkX + dx, chunkZ + dz);
-    }
-  }
-}
-
-function updateCeilingLights(time) {
-  for (const light of lightMeshes) {
-    if (light.userData && light.userData.flicker) {
-      const phase = light.userData.phase;
-      const base = light.userData.baseOpacity;
-      const flicker = Math.sin(time * 3 + phase) * 0.5 + 0.5;
-      light.material.opacity = base * (0.3 + flicker * 0.7);
-      if (Math.random() < 0.005) {
-        light.material.opacity = 0.05;
-      }
-    }
-  }
-}
+// Lights are intentionally not rendered to keep the ceiling dark
 
 // ============================================================
 // RNG HELPERS
@@ -941,10 +829,6 @@ function refreshMazeMeshes(px,pz){
       meshesRemoved++;
     }
   }
-  
-  // Generate ceiling lights for visible chunks
-  clearLights();
-  updateLightsForPlayer(px, pz);
   
   const elapsed = performance.now() - startTime;
   log('   ✅ Maze refresh complete: ' + meshesCreated + ' meshes created, ' + meshesRemoved + ' removed, ' + elapsed.toFixed(2) + 'ms');
@@ -1470,7 +1354,7 @@ function makeDotTexture(color){
 }
 const healTex  = makeDotTexture(0x35d16b);
 const powerTex = makeDotTexture(0x3d8bf0);
-const teleportTex = makeDotTexture(0x8b5cf6);
+const teleportTex = makeDotTexture(0x4a1a6b); // Darker purple for teleport
 
 let pickups = [];
 let lastHealSpawnAt = 0, lastPowerSpawnAt = 0;
@@ -1858,7 +1742,6 @@ function showComic() {
   
   img.className = '';
   skipBtn.classList.remove('visible');
-  img.style.transform = 'translateX(0%)';
   
   const comicUrls = getFileUrls('comic');
   if (comicUrls.length > 0) {
@@ -1871,17 +1754,15 @@ function showComic() {
     logWarn('No comic found');
   }
   
+  // Show the image with fade-in (no scroll)
   requestAnimationFrame(() => {
     img.classList.add('visible');
   });
   
-  setTimeout(() => {
-    img.classList.add('scrolling');
-  }, 1500);
-  
+  // Show skip button after 2 seconds
   setTimeout(() => {
     skipBtn.classList.add('visible');
-  }, 3000);
+  }, 2000);
   
   const showSkip = () => {
     skipBtn.classList.add('visible');
@@ -2120,7 +2001,7 @@ function drawMinimap(){
     if(Math.hypot(rx,rz) > Math.min(W,H)/2) return;
     let color = '#35d16b';
     if (p.type === 'power') color = '#3d8bf0';
-    else if (p.type === 'teleport') color = '#8b5cf6';
+    else if (p.type === 'teleport') color = '#4a1a6b';
     miniCtx.fillStyle = color;
     miniCtx.beginPath(); miniCtx.arc(cx0+rx, cy0+rz, 3.4, 0, Math.PI*2); miniCtx.fill();
   });
@@ -2467,9 +2348,6 @@ function update(dt){
   const pulseSpeed = 3 + closeness*9;
   const pulse = 0.7 + 0.3*Math.sin(elapsed*pulseSpeed);
   document.getElementById('proximity').style.opacity = (closeness*closeness*pulse).toFixed(3);
-
-  // Update ceiling lights
-  updateCeilingLights(elapsed);
 
   // UI updates
   const interval = spawnIntervalCur();
