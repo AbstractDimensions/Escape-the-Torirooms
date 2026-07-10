@@ -1,4 +1,22 @@
 {
-  "topTimes": [],
-  "topDistances": []
+  "topTimes": [
+    {
+      "username": "ConsoleTest_010432",
+      "time": 128.1,
+      "distance": 666,
+      "date": "2026-07-10T12:20:10.432Z",
+      "killedBy": "TestBot",
+      "upgrades": 3
+    }
+  ],
+  "topDistances": [
+    {
+      "username": "ConsoleTest_010432",
+      "distance": 666,
+      "time": 128.1,
+      "date": "2026-07-10T12:20:10.432Z",
+      "killedBy": "TestBot",
+      "upgrades": 3
+    }
+  ]
 }
