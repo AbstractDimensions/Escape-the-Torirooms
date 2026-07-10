@@ -34,6 +34,14 @@
     },
     {
       "username": "Louis",
+      "time": 16.8,
+      "distance": 160,
+      "date": "2026-07-10T13:13:20.537Z",
+      "killedBy": "Zenikah",
+      "upgrades": 0
+    },
+    {
+      "username": "Louis",
       "time": 13.9,
       "distance": 154,
       "date": "2026-07-10T12:29:20.739Z",
@@ -71,14 +79,6 @@
       "date": "2026-07-10T12:32:46.774Z",
       "killedBy": "Unknown",
       "upgrades": 0
-    },
-    {
-      "username": "louis",
-      "time": 7.1,
-      "distance": 40,
-      "date": "2026-07-10T12:34:23.814Z",
-      "killedBy": "Cayla",
-      "upgrades": 0
     }
   ],
   "topDistances": [
@@ -104,6 +104,14 @@
       "time": 22.2,
       "date": "2026-07-10T12:54:22.959Z",
       "killedBy": "Aidan Senekal",
+      "upgrades": 0
+    },
+    {
+      "username": "Louis",
+      "distance": 160,
+      "time": 16.8,
+      "date": "2026-07-10T13:13:20.537Z",
+      "killedBy": "Zenikah",
       "upgrades": 0
     },
     {
@@ -152,14 +160,6 @@
       "time": 9.6,
       "date": "2026-07-10T13:12:35.848Z",
       "killedBy": "Unknown",
-      "upgrades": 0
-    },
-    {
-      "username": "louis",
-      "distance": 40,
-      "time": 7.1,
-      "date": "2026-07-10T12:34:23.814Z",
-      "killedBy": "Cayla",
       "upgrades": 0
     }
   ]
