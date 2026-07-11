@@ -318,8 +318,10 @@ const BOB_FREQ       = 1.7;
 const EXPECTED_BOT_COUNT_BASE = 3;
 const EXPECTED_BOT_COUNT_GROWTH = 1;
 const BOT_RESPAWN_DELAY = 5;
-const TELEPORT_RADIUS_MIN = 60;
-const TELEPORT_RADIUS_MAX = 90;
+
+// Audio distance constants - linear falloff
+const AUDIO_MAX_DIST = VIEW_RADIUS * CELL; // Render distance edge
+const AUDIO_MIN_DIST = 2 * CELL; // 2 cells away = full volume
 
 // HIGH SCORES API
 const HIGHSCORE_API = 'https://script.google.com/macros/s/AKfycbz6euP5HUwJqhLb0eXHxtnFPyCyzWd75i9MmAKpXaUdsvWhdXj5l1rsrjI0l663gutK/exec';
@@ -493,11 +495,6 @@ const bigCeil = new THREE.Mesh(new THREE.PlaneGeometry(2000,2000), ceilMat);
 bigCeil.rotation.x = Math.PI/2;
 bigCeil.position.y = WALL_HEIGHT;
 scene.add(bigCeil);
-
-// ============================================================
-// CEILING LIGHTS - DISABLED (No visible ceiling lights)
-// ============================================================
-// Lights are intentionally not rendered to keep the ceiling dark
 
 // ============================================================
 // RNG HELPERS
@@ -910,17 +907,6 @@ function findOpenSpawnPoint(fromX, fromZ, minDist, maxDist, preferDirection) {
   return [fromX + (Math.random()-0.5)*CELL*2, fromZ + (Math.random()-0.5)*CELL*2];
 }
 
-function findOpenTeleportPoint(fromX, fromZ, minDist, maxDist) {
-  for(let tries=0; tries<80; tries++){
-    const ang = Math.random() * Math.PI * 2;
-    const dist = minDist + Math.random() * (maxDist - minDist);
-    const x = fromX + Math.sin(ang) * dist * CELL;
-    const z = fromZ + Math.cos(ang) * dist * CELL;
-    if(cellTypeAtWorld(x,z) === OPEN) return [x,z];
-  }
-  return [fromX + (Math.random()-0.5)*CELL*4, fromZ + (Math.random()-0.5)*CELL*4];
-}
-
 // ============================================================
 // NEXTBOT ROSTER
 // ============================================================
@@ -1209,6 +1195,14 @@ function relocateBot(inst, px, pz){
   log('🔄 Relocated bot to (' + sx.toFixed(1) + ', ' + sz.toFixed(1) + ')');
 }
 
+function getAudioVolume(dist) {
+  // Linear falloff: full volume at AUDIO_MIN_DIST, zero at AUDIO_MAX_DIST
+  if (dist <= AUDIO_MIN_DIST) return 1.0;
+  if (dist >= AUDIO_MAX_DIST) return 0.0;
+  // Linear interpolation between min and max
+  return 1.0 - ((dist - AUDIO_MIN_DIST) / (AUDIO_MAX_DIST - AUDIO_MIN_DIST));
+}
+
 function playBotMusic(botId, bx, bz) {
   if (!audioCtx) return;
   
@@ -1251,10 +1245,10 @@ function updateBotMusicDistance(inst, px, pz) {
   if (!runtime.musicGainNode) return;
   
   const dist = Math.hypot(inst.x - px, inst.z - pz);
-  // Inverse square falloff: 1/(1 + dist^2)
-  // At dist=2: 1/(1+4) = 0.2 (~half volume)
-  const volume = 0.3 / (1 + dist * dist);
-  runtime.musicGainNode.gain.value = Math.min(0.3, volume);
+  const volume = getAudioVolume(dist) * 0.3;
+  // Clamp to prevent NaN or invalid values
+  const safeVolume = Math.max(0, Math.min(0.3, volume));
+  runtime.musicGainNode.gain.value = safeVolume;
 }
 
 function stepBot(inst, px, pz, dt, botSpeed){
@@ -1354,7 +1348,6 @@ function makeDotTexture(color){
 }
 const healTex  = makeDotTexture(0x35d16b);
 const powerTex = makeDotTexture(0x3d8bf0);
-const teleportTex = makeDotTexture(0x4a1a6b); // Darker purple for teleport
 
 let pickups = [];
 let lastHealSpawnAt = 0, lastPowerSpawnAt = 0;
@@ -1365,7 +1358,6 @@ function spawnPickup(type, px, pz){
   let tex;
   if (type === 'heal') tex = healTex;
   else if (type === 'power') tex = powerTex;
-  else if (type === 'teleport') tex = teleportTex;
   
   const mat = new THREE.SpriteMaterial({map: tex});
   const sprite = new THREE.Sprite(mat);
@@ -1374,12 +1366,9 @@ function spawnPickup(type, px, pz){
   scene.add(sprite);
   pickups.push({type, x, z, sprite, bobPhase: Math.random()*Math.PI*2});
   
-  if (type === 'teleport') {
-    log('🟣 Spawned teleport orb at (' + x.toFixed(1) + ', ' + z.toFixed(1) + ')');
-  } else {
-    log('🎯 Spawned ' + type + ' pickup at (' + x.toFixed(1) + ', ' + z.toFixed(1) + ')');
-  }
+  log('🎯 Spawned ' + type + ' pickup at (' + x.toFixed(1) + ', ' + z.toFixed(1) + ')');
 }
+
 function clearPickups(){
   pickups.forEach(p=>scene.remove(p.sprite));
   pickups = [];
@@ -2001,7 +1990,6 @@ function drawMinimap(){
     if(Math.hypot(rx,rz) > Math.min(W,H)/2) return;
     let color = '#35d16b';
     if (p.type === 'power') color = '#3d8bf0';
-    else if (p.type === 'teleport') color = '#4a1a6b';
     miniCtx.fillStyle = color;
     miniCtx.beginPath(); miniCtx.arc(cx0+rx, cy0+rz, 3.4, 0, Math.PI*2); miniCtx.fill();
   });
@@ -2275,19 +2263,14 @@ function update(dt){
     botRespawnTimer = 0;
   }
 
-  // Pickups
+  // Pickups - no teleport orbs
   const distMoved = Math.hypot(px - lastStationaryPos.x, pz - lastStationaryPos.z);
-  const isStationary = distMoved < 0.5;
   lastStationaryPos.x = px;
   lastStationaryPos.z = pz;
   
   if(elapsed - lastHealSpawnAt > HEAL_SPAWN_INTERVAL){ 
     lastHealSpawnAt = elapsed; 
-    if (isStationary && Math.random() < 0.5) {
-      spawnPickup('teleport', px, pz);
-    } else {
-      spawnPickup('heal', px, pz);
-    }
+    spawnPickup('heal', px, pz);
   }
   
   if(elapsed - lastPowerSpawnAt > POWER_SPAWN_INTERVAL){ 
@@ -2304,8 +2287,7 @@ function update(dt){
     const dx = px-p.x, dz = pz-p.z;
     const d = Math.hypot(dx,dz);
     
-    let magnetRange = MAGNET_RADIUS;
-    if (p.type === 'teleport') magnetRange = Infinity;
+    const magnetRange = MAGNET_RADIUS;
     
     if(d < magnetRange && d>0.001){
       const pull = MAGNET_SPEED*(1-Math.min(1, d/magnetRange)) + 3;
@@ -2326,14 +2308,6 @@ function update(dt){
         showToast('+' + Math.round(healAmount) + ' HP');
       } else if(p.type==='power'){ 
         offerUpgrades(); 
-      } else if(p.type==='teleport'){
-        const [tx, tz] = findOpenTeleportPoint(px, pz, TELEPORT_RADIUS_MIN, TELEPORT_RADIUS_MAX);
-        px = tx;
-        pz = tz;
-        log('🟣 Teleported to (' + tx.toFixed(1) + ', ' + tz.toFixed(1) + ')');
-        showToast('✦ You\'ve been teleported! ✦');
-        lastStationaryPos.x = px;
-        lastStationaryPos.z = pz;
       }
     }
   }
