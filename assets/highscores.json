@@ -25,6 +25,14 @@
       "upgrades": 1
     },
     {
+      "username": "MEGABYTES",
+      "time": 45.1,
+      "distance": 175,
+      "date": "2026-07-11T17:53:46.126Z",
+      "killedBy": "Priya",
+      "upgrades": 2
+    },
+    {
       "username": "Louis",
       "time": 37.6,
       "distance": 448,
@@ -70,14 +78,6 @@
       "distance": 25,
       "date": "2026-07-11T10:41:13.881Z",
       "killedBy": "Louis",
-      "upgrades": 1
-    },
-    {
-      "username": "Louis",
-      "time": 28.5,
-      "distance": 58,
-      "date": "2026-07-11T06:33:15.532Z",
-      "killedBy": "Evie",
       "upgrades": 1
     }
   ],
@@ -155,12 +155,12 @@
       "upgrades": 0
     },
     {
-      "username": "Louis",
-      "distance": 174,
-      "time": 17.3,
-      "date": "2026-07-10T22:57:17.599Z",
-      "killedBy": "Ruhan",
-      "upgrades": 0
+      "username": "MEGABYTES",
+      "distance": 175,
+      "time": 45.1,
+      "date": "2026-07-11T17:53:46.126Z",
+      "killedBy": "Priya",
+      "upgrades": 2
     }
   ]
 }
