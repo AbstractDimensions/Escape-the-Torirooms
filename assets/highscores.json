@@ -10,6 +10,14 @@
     },
     {
       "username": "Louis",
+      "time": 110.6,
+      "distance": 27,
+      "date": "2026-07-11T10:42:18.818Z",
+      "killedBy": "Migah",
+      "upgrades": 1
+    },
+    {
+      "username": "Louis",
       "time": 61.5,
       "distance": 472,
       "date": "2026-07-10T12:28:34.697Z",
@@ -71,14 +79,6 @@
       "date": "2026-07-11T06:33:15.532Z",
       "killedBy": "Evie",
       "upgrades": 1
-    },
-    {
-      "username": "louis",
-      "time": 24.9,
-      "distance": 172,
-      "date": "2026-07-11T06:06:52.033Z",
-      "killedBy": "Zenikah",
-      "upgrades": 0
     }
   ],
   "topDistances": [
