@@ -49,6 +49,14 @@
       "upgrades": 0
     },
     {
+      "username": "Tori",
+      "time": 30.6,
+      "distance": 85,
+      "date": "2026-07-11T10:41:37.496Z",
+      "killedBy": "Unknown",
+      "upgrades": 0
+    },
+    {
       "username": "SHROOM",
       "time": 29.8,
       "distance": 25,
@@ -71,14 +79,6 @@
       "date": "2026-07-11T06:06:52.033Z",
       "killedBy": "Zenikah",
       "upgrades": 0
-    },
-    {
-      "username": "louis",
-      "time": 23.2,
-      "distance": 107,
-      "date": "2026-07-10T12:33:13.555Z",
-      "killedBy": "Aidan Senekal",
-      "upgrades": 1
     }
   ],
   "topDistances": [
